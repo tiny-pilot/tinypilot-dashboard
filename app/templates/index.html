@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {% set asset_v = '20260511-15' %}
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TinyPilot Dashboard</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png', v=asset_v) }}" sizes="32x32">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css', v=asset_v) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/brand-overrides.css', v=asset_v) }}">
+  </head>
+  <body>
+    <dashboard-app data-asset-version="{{ asset_v }}" data-dashboard-version="{{ dashboard_version }}"></dashboard-app>
+    <script src="{{ url_for('static', filename='js/api.js', v=asset_v) }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/dashboard-app.js', v=asset_v) }}"></script>
+  </body>
+</html>

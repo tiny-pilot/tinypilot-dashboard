@@ -1,0 +1,14 @@
+name: tinypilot-dashboard
+
+services:
+  dashboard:
+    build: .
+    ports:
+      # Bind to localhost only. To expose the dashboard to other hosts on a
+      # trusted network, see "Deployment & security" in the README.
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - FLASK_ENV=production
+    restart: unless-stopped

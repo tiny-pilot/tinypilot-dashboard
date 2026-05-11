@@ -1,0 +1,41 @@
+# Keep the Docker build context lean and free of host-only state.
+
+# VCS / IDE
+.git
+.gitignore
+.gitattributes
+.worktrees
+.vscode
+.idea
+
+# Host-side runtime data (NEVER bake real customer secrets/screenshots into an image)
+data/
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+
+# Tests are not needed in the runtime image
+tests/
+pytest.ini
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Local env files (the app reads FLASK_-prefixed env vars from the container env, not a file)
+.env
+.env.*
+
+# Documentation that doesn't need to ship in the image
+README.md
+CONTRIBUTING.md
+INTERNAL.md
+THIRD_PARTY_NOTICES.md
+LICENSE

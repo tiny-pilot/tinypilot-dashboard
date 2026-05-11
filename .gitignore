@@ -1,0 +1,21 @@
+.worktrees/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+data/
+
+# Maintainer-only notes — never commit to the public repo
+INTERNAL.md
+
+# Local Compose override for the maintainer's dev loop
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Environment files (the app reads config from container env, not a file)
+.env
+.env.*
+
+# OS junk
+.DS_Store
+Thumbs.db
