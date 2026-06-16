@@ -4,30 +4,6 @@ function snapshotRow(label, valueText) {
   return `<div class="snapshot-row"><span>${escapeHtml(label)}</span><strong class="snapshot-row__value">${escapeHtml(valueText)}</strong></div>`;
 }
 
-function normalizeNetworkInterface(entry) {
-  if (!entry || typeof entry !== 'object') {
-    return null;
-  }
-  const name =
-    stringValue(entry.name)
-    || stringValue(entry.interface)
-    || stringValue(entry.device)
-    || 'unknown';
-  const ip =
-    stringValue(entry.ipAddress)
-    || stringValue(entry.ip_address)
-    || stringValue(entry.ip)
-    || 'no ip';
-  let connected = entry.isConnected;
-  if (connected === undefined) {
-    connected = entry.is_connected;
-  }
-  if (connected === undefined) {
-    connected = entry.connected;
-  }
-  return { name, ip, connected };
-}
-
 function interfaceLinkLabel(connected) {
   if (connected === true) {
     return 'connected';
@@ -38,19 +14,50 @@ function interfaceLinkLabel(connected) {
   return 'unknown';
 }
 
-function formatInterfaces(interfaces) {
-  if (!Array.isArray(interfaces) || interfaces.length === 0) {
-    return snapshotRow('Interfaces', 'None reported');
+function formatNetworkInterface(label, iface) {
+  if (!iface || typeof iface !== 'object') {
+    return '';
   }
-  const normalized = interfaces
-    .map(normalizeNetworkInterface)
-    .filter(Boolean)
-    .sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' }));
-  return normalized.map((entry) => {
-    const link = interfaceLinkLabel(entry.connected);
-    const value = `${entry.ip} (${link})`;
-    return snapshotRow(entry.name, value);
-  }).join('');
+  const ip =
+    stringValue(iface.ipAddress)
+    || stringValue(iface.ip_address)
+    || stringValue(iface.ip)
+    || 'no IP';
+  const mac =
+    stringValue(iface.macAddress)
+    || stringValue(iface.mac_address)
+    || stringValue(iface.mac);
+  let connected = iface.isConnected;
+  if (connected === undefined) {
+    connected = iface.is_connected;
+  }
+  if (connected === undefined) {
+    connected = iface.connected;
+  }
+  const rows = [snapshotRow(`${label} IP`, ip)];
+  if (mac) {
+    rows.push(snapshotRow(`${label} MAC`, mac));
+  }
+  rows.push(snapshotRow(`${label} status`, interfaceLinkLabel(connected)));
+  return rows.join('');
+}
+
+function formatNetworkData(data) {
+  if (!data || typeof data !== 'object') {
+    return snapshotRow('Network', 'None reported');
+  }
+  const { ethernet, wifi } = data;
+  const parts = [];
+  if (ethernet) {
+    parts.push(formatNetworkInterface('Ethernet', ethernet));
+  }
+  if (wifi) {
+    parts.push(formatNetworkInterface('Wi-Fi', wifi));
+  }
+  if (parts.length === 0) {
+    return snapshotRow('Network', 'None reported');
+  }
+  return parts.join('');
 }
 
 // TinyPilot ships two streaming modes today: H.264 and MJPEG. Normalize the
@@ -156,7 +163,7 @@ export function formatExpandedSnapshot(snapshot) {
   const https = expanded.https_requirement?.status || {};
   const video = expanded.video_settings?.status || {};
 
-  const interfaces = expanded.network?.interfaces || [];
+  const networkData = expanded.network?.data || {};
   const videoTuning = formatVideoTuning(video, status);
   const resolutionRow = snapshotRow(
     'Connected device resolution',
@@ -175,7 +182,7 @@ export function formatExpandedSnapshot(snapshot) {
       </div>
       <div class="snapshot-section">
         <h4 class="snapshot-section-title">Network interfaces</h4>
-        ${formatInterfaces(interfaces)}
+        ${formatNetworkData(networkData)}
       </div>
       <div class="snapshot-section">
         <h4 class="snapshot-section-title">Video</h4>
