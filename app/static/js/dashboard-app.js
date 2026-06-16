@@ -1,5 +1,5 @@
 import './components/device-card.js';
-import { formatRelativeTime } from './lib/strings.js';
+import { escapeHtml, formatRelativeTime } from './lib/strings.js';
 
 const DEVICES_PER_PAGE = 4;
 const CONNECTED_STATUS_REFRESH_INTERVAL_MS = 30_000;
@@ -256,6 +256,89 @@ class DashboardApp extends HTMLElement {
     }
     if (action === 'fetch-device-snapshot') {
       await card.refreshSnapshot();
+      return;
+    }
+    if (action === 'fetch-media') {
+      const statusEl = card.querySelector(`#virtual-media-status-${deviceId}`);
+      const urlInput = card.querySelector(`#virtual-media-url-${deviceId}`);
+      const url = urlInput ? urlInput.value.trim() : '';
+      if (!url) {
+        if (statusEl) {
+          statusEl.textContent = 'Please enter a URL.';
+        }
+        return;
+      }
+      if (statusEl) {
+        statusEl.textContent = 'Downloading…';
+      }
+      const fetchResult = await window.dashboardApi.postJson(
+        `/api/devices/${deviceId}/media/fetch`,
+        { url },
+      );
+      if (fetchResult.error) {
+        if (statusEl) {
+          statusEl.textContent = `Failed: ${fetchResult.error}`;
+        }
+      } else {
+        await card.refreshMedia();
+      }
+      return;
+    }
+    if (action === 'mount-media') {
+      const fileSelect = card.querySelector(`#virtual-media-file-${deviceId}`);
+      const modeSelect = card.querySelector(`#virtual-media-mode-${deviceId}`);
+      const statusEl = card.querySelector(`#virtual-media-status-${deviceId}`);
+      const fileName = fileSelect ? fileSelect.value : '';
+      const mode = modeSelect ? modeSelect.value : 'CDROM';
+      if (!fileName) {
+        if (statusEl) {
+          statusEl.textContent = 'Please select an image.';
+        }
+        return;
+      }
+      const mountResult = await window.dashboardApi.putJson(
+        `/api/devices/${deviceId}/media/mount`,
+        { fileName, mode },
+      );
+      if (mountResult.error) {
+        if (statusEl) {
+          statusEl.textContent = `Mount failed: ${mountResult.error}`;
+        }
+      } else {
+        await card.refreshMedia();
+      }
+      return;
+    }
+    if (action === 'eject-media') {
+      const ejectArea = card.querySelector(`#virtual-media-eject-area-${deviceId}`);
+      const mountedName = ejectArea
+        ? ejectArea.closest('.virtual-media-body').querySelector('dd')?.textContent || 'this image'
+        : 'this image';
+      if (ejectArea) {
+        ejectArea.innerHTML = `
+          <span class="virtual-media-confirm-text">Eject ${escapeHtml(mountedName)}?</span>
+          <button type="button" data-action="eject-media-confirm" data-device-id="${deviceId}">Eject</button>
+          <button type="button" data-action="eject-media-cancel" data-device-id="${deviceId}">Cancel</button>
+        `;
+      }
+      return;
+    }
+    if (action === 'eject-media-confirm') {
+      const statusEl = card.querySelector(`#virtual-media-status-${deviceId}`);
+      const ejectResult = await window.dashboardApi.putJson(
+        `/api/devices/${deviceId}/media/eject`,
+      );
+      if (ejectResult.error) {
+        if (statusEl) {
+          statusEl.textContent = `Eject failed: ${ejectResult.error}`;
+        }
+      } else {
+        await card.refreshMedia();
+      }
+      return;
+    }
+    if (action === 'eject-media-cancel') {
+      await card.refreshMedia();
     }
   }
 
@@ -371,6 +454,7 @@ class DashboardApp extends HTMLElement {
       }
       await card.refreshScreenshot(this._screenshotCapturedAtByDevice);
       await card.refreshSnapshot();
+      await card.refreshMedia();
     }
   }
 

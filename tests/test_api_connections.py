@@ -178,11 +178,6 @@ def test_set_screenshot_refresh_interval_endpoint(client):
     assert device['screenshot_refresh_interval_minutes'] == 5
 
 
-def test_refresh_csrf_endpoint(client):
-    response = client.post('/api/devices/1/device/refresh-csrf')
-    assert response.status_code in (200, 404)
-
-
 def test_index_page_loads(client):
     response = client.get('/')
     assert response.status_code == 200
@@ -191,7 +186,7 @@ def test_index_page_loads(client):
     assert b'dashboard-app.js' in response.data
 
 
-def test_refresh_csrf_and_device_metrics_endpoint(client):
+def test_refresh_csrf_endpoint(client):
     create_payload = {
         'friendly_name': 'Office Rack KVM',
         'base_url': 'https://192.168.1.44',
@@ -204,16 +199,13 @@ def test_refresh_csrf_and_device_metrics_endpoint(client):
     with patch('app.api.TinyPilotClient') as client_cls:
         tp_client = client_cls.return_value
         tp_client.refresh_csrf_token.return_value = 'csrf-abc'
-        tp_client.get_network_status.return_value = {'interfaces': [{'name': 'eth0'}]}
 
         csrf_response = client.post(f'/api/devices/{device_id}/device/refresh-csrf')
         assert csrf_response.status_code == 200
         assert csrf_response.json['csrf_refreshed'] is True
 
-        metrics_response = client.get(f'/api/devices/{device_id}/device/metrics')
-        assert metrics_response.status_code == 200
-        assert metrics_response.json['metrics'] == {'interfaces': [{'name': 'eth0'}]}
-        assert metrics_response.json['source_base_url'] == create_payload['base_url']
+    metrics_response = client.get(f'/api/devices/{device_id}/device/metrics')
+    assert metrics_response.status_code == 404
 
 
 def test_device_snapshot_endpoint_returns_collapsed_and_expanded_sections(client):
@@ -233,7 +225,8 @@ def test_device_snapshot_endpoint_returns_collapsed_and_expanded_sections(client
         tp_client.get_auth_status.return_value = {'isAuthenticated': True, 'username': 'admin'}
         tp_client.get_version.return_value = {'version': '2.6.5'}
         tp_client.get_network_status.return_value = {
-            'interfaces': [{'name': 'eth0', 'isConnected': True, 'ipAddress': '192.168.1.44'}]
+            'ethernet': {'isConnected': True, 'ipAddress': '192.168.1.44', 'macAddress': 'aa:bb:cc:dd:ee:ff'},
+            'wifi': {'isConnected': False, 'ipAddress': ''},
         }
         tp_client.get_requires_https.return_value = {'requiresHttps': True}
         tp_client.get_video_settings.return_value = {'h264Bitrate': 8000, 'streamingMode': 'MJPEG'}
@@ -250,7 +243,7 @@ def test_device_snapshot_endpoint_returns_collapsed_and_expanded_sections(client
     assert payload['collapsed']['software_version'] == '2.6.5'
     assert payload['collapsed']['web_session_status'] == 'connected'
     assert 'connected_device_resolution' not in payload['collapsed']
-    assert payload['expanded']['network']['interfaces'][0]['name'] == 'eth0'
+    assert payload['expanded']['network']['data']['ethernet']['ipAddress'] == '192.168.1.44'
     assert payload['expanded']['connected_device_resolution'] == '1920x1080'
 
 
@@ -285,7 +278,7 @@ def test_device_snapshot_prefers_automation_state_resolution(client):
         tp_client.get_status.return_value = {'ok': True}
         tp_client.get_auth_status.return_value = {}
         tp_client.get_version.return_value = {'version': '3.0.2'}
-        tp_client.get_network_status.return_value = {'interfaces': []}
+        tp_client.get_network_status.return_value = {'ethernet': None, 'wifi': None}
         tp_client.get_requires_https.return_value = {'requiresHttps': False}
         tp_client.get_video_settings.return_value = {'h264Bitrate': 900}
         tp_client.get_automation_state.return_value = {
@@ -355,3 +348,92 @@ def test_refresh_screenshot_retries_after_401_by_refreshing_token(client):
 
     assert response.status_code == 200
     assert response.json['screenshot_refreshed'] is True
+
+
+def _create_media_device(client):
+    """Helper: create a device with no automation token for media tests."""
+    with patch('app.api.TinyPilotClient') as cls:
+        cls.return_value.refresh_automation_token.side_effect = RuntimeError('no device')
+        resp = client.post('/api/devices', json={
+            'friendly_name': 'Media Test Device',
+            'base_url': 'https://192.168.1.200',
+        })
+    return resp.json['device']['id']
+
+
+def test_get_media_returns_backing_files(client):
+    device_id = _create_media_device(client)
+    backing_files_response = {
+        'backingFiles': [{'name': 'ubuntu.iso', 'mounted': True, 'loadedBytes': 100, 'totalBytes': 100}],
+        'intermediateFiles': [],
+        'mountMode': 'CDROM',
+    }
+    with patch('app.api.TinyPilotClient') as cls:
+        cls.return_value.get_mass_storage.return_value = backing_files_response
+        response = client.get(f'/api/devices/{device_id}/media')
+
+    assert response.status_code == 200
+    assert response.json['backingFiles'][0]['name'] == 'ubuntu.iso'
+    assert response.json['mountMode'] == 'CDROM'
+
+
+def test_get_media_returns_404_for_unknown_device(client):
+    response = client.get('/api/devices/9999/media')
+    assert response.status_code == 404
+
+
+def test_media_fetch_triggers_device_download(client):
+    device_id = _create_media_device(client)
+    with patch('app.api.TinyPilotClient') as cls:
+        cls.return_value.get_mass_storage_filename_from_url.return_value = 'ubuntu.iso'
+        cls.return_value.fetch_mass_storage_from_url.return_value = None
+        response = client.post(
+            f'/api/devices/{device_id}/media/fetch',
+            json={'url': 'https://example.com/ubuntu.iso'},
+        )
+
+    assert response.status_code == 200
+    assert response.json['fileName'] == 'ubuntu.iso'
+
+
+def test_media_fetch_returns_400_without_url(client):
+    device_id = _create_media_device(client)
+    response = client.post(f'/api/devices/{device_id}/media/fetch', json={})
+    assert response.status_code == 400
+
+
+def test_media_mount_calls_device(client):
+    device_id = _create_media_device(client)
+    with patch('app.api.TinyPilotClient') as cls:
+        cls.return_value.mount_mass_storage.return_value = None
+        response = client.put(
+            f'/api/devices/{device_id}/media/mount',
+            json={'fileName': 'ubuntu.iso', 'mode': 'CDROM'},
+        )
+
+    assert response.status_code == 200
+    cls.return_value.mount_mass_storage.assert_called_once_with('ubuntu.iso', 'CDROM')
+
+
+def test_media_mount_returns_400_without_required_fields(client):
+    device_id = _create_media_device(client)
+    response = client.put(
+        f'/api/devices/{device_id}/media/mount',
+        json={'fileName': 'ubuntu.iso'},
+    )
+    assert response.status_code == 400
+
+
+def test_media_eject_calls_device(client):
+    device_id = _create_media_device(client)
+    with patch('app.api.TinyPilotClient') as cls:
+        cls.return_value.eject_mass_storage.return_value = None
+        response = client.put(f'/api/devices/{device_id}/media/eject')
+
+    assert response.status_code == 200
+    cls.return_value.eject_mass_storage.assert_called_once()
+
+
+def test_media_eject_returns_404_for_unknown_device(client):
+    response = client.put('/api/devices/9999/media/eject')
+    assert response.status_code == 404

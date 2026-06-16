@@ -80,6 +80,25 @@ class TinyPilotClient:
         response.raise_for_status()
         return response.json()
 
+    def _raise_for_status(self, response: requests.Response) -> None:
+        """Raise an HTTPError, including TinyPilot's error message when present.
+
+        TinyPilot error responses carry ``{"message": "...", "code": ...}``.
+        Surfacing that message makes failures much easier to diagnose.
+        """
+        if response.ok:
+            return
+        device_message = ''
+        try:
+            body = response.json()
+            device_message = body.get('message') or ''
+        except ValueError:
+            pass
+        detail = f'{response.status_code} {response.reason}'
+        if device_message:
+            detail = f'{detail}: {device_message}'
+        raise requests.HTTPError(detail, response=response)
+
     def _get_json(self, path: str) -> dict[str, Any]:
         warmup = self.session.get(self.base_url, timeout=10)
         warmup.raise_for_status()
@@ -88,8 +107,83 @@ class TinyPilotClient:
             # Automatically recover from stale session/csrf by reloading the WebUI token once.
             self.refresh_csrf_token()
             response = self.session.get(f'{self.base_url}{path}', timeout=10)
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response.json()
+
+    def _put_json(
+        self,
+        path: str,
+        body: Optional[dict] = None,
+        params: Optional[dict] = None,
+    ) -> dict[str, Any]:
+        """Send a PUT request with CSRF header. Retries once on 401/403."""
+        warmup = self.session.get(self.base_url, timeout=10)
+        warmup.raise_for_status()
+        csrf_token = None
+        csrf_match = re.search(
+            r'<meta\s+name="csrf-token"\s+content="([^"]+)"\s*/?>',
+            warmup.text,
+        )
+        if csrf_match:
+            csrf_token = csrf_match.group(1)
+        headers = {'X-CSRFToken': csrf_token} if csrf_token else {}
+        response = self.session.put(
+            f'{self.base_url}{path}',
+            json=body,
+            params=params,
+            headers=headers,
+            timeout=30,
+        )
+        if response.status_code in (401, 403):
+            new_csrf = self.refresh_csrf_token()
+            retry_headers = (
+                {'X-CSRFToken': new_csrf}
+                if new_csrf and new_csrf != 'session-cookie'
+                else {}
+            )
+            response = self.session.put(
+                f'{self.base_url}{path}',
+                json=body,
+                params=params,
+                headers=retry_headers,
+                timeout=30,
+            )
+        self._raise_for_status(response)
+        return response.json() if response.content else {}
+
+    def get_mass_storage(self) -> dict[str, Any]:
+        """Return backing files, intermediate files, and current mount mode."""
+        return self._get_json('/api/massStorage/backingFiles')
+
+    def get_mass_storage_filename_from_url(self, url: str) -> str:
+        """Resolve or generate a backing file name from a download URL."""
+        warmup = self.session.get(self.base_url, timeout=10)
+        warmup.raise_for_status()
+        response = self.session.get(
+            f'{self.base_url}/api/massStorage/retrieveFileNameFromUrl',
+            params={'url': url},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return response.json()['fileName']
+
+    def fetch_mass_storage_from_url(self, filename: str, url: str) -> None:
+        """Tell the device to download an image from a URL and store it as `filename`."""
+        self._put_json(
+            f'/api/massStorage/backingFiles/{filename}/fetchFromUrl',
+            body={'url': url},
+        )
+
+    def mount_mass_storage(self, filename: str, mode: str) -> None:
+        """Mount `filename` in the given mode (CDROM, FLASH_READ_ONLY, FLASH_READ_WRITE)."""
+        self._put_json(
+            f'/api/massStorage/mount/{filename}',
+            params={'mode': mode},
+        )
+
+    def eject_mass_storage(self) -> None:
+        """Eject the currently mounted image."""
+        self._put_json('/api/massStorage/eject')
 
     def get_status(self) -> dict[str, Any]:
         return self._get_json('/api/status')

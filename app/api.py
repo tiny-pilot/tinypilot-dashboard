@@ -438,28 +438,6 @@ def refresh_csrf_token(device_id: int):
     return jsonify({'device_id': device_id, 'csrf_refreshed': True})
 
 
-@api_blueprint.get('/devices/<int:device_id>/device/metrics')
-def get_device_metrics(device_id: int):
-    row = _device_row_with_web_auth(device_id)
-    if row is None:
-        return jsonify({'error': 'device not found'}), 404
-
-    key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    http_basic = _http_basic_from_auth_row(key_path, row)
-    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
-    try:
-        client.refresh_csrf_token()
-        metrics = client.get_network_status()
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': f'failed to fetch device metrics: {err}'}), 502
-    return jsonify(
-        {
-            'device_id': device_id,
-            'source_base_url': row['base_url'],
-            'metrics': metrics,
-        }
-    )
-
 
 def _safe_fetch(fetcher):
     try:
@@ -561,7 +539,7 @@ def get_device_snapshot(device_id: int):
         'reachability': {'status': status, 'error': status_error},
         'web_session': {'status': auth_status, 'error': auth_error},
         'version': {'status': version, 'error': version_error},
-        'network': {'interfaces': (network or {}).get('interfaces', []), 'error': network_error},
+        'network': {'data': network or {}, 'error': network_error},
         'https_requirement': {'status': requires_https, 'error': https_error},
         'video_settings': {'status': video, 'error': video_error},
         'connected_device_resolution': connected_resolution,
@@ -576,3 +554,77 @@ def get_device_snapshot(device_id: int):
             'expanded': expanded,
         }
     )
+
+
+@api_blueprint.get('/devices/<int:device_id>/media')
+def get_device_media(device_id: int):
+    """Return current virtual media state (backing files + mount mode) for a device."""
+    row = _device_row_with_web_auth(device_id)
+    if row is None:
+        return jsonify({'error': 'device not found'}), 404
+    key_path = Path(current_app.config['SECRET_KEY_PATH'])
+    http_basic = _http_basic_from_auth_row(key_path, row)
+    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
+    try:
+        result = client.get_mass_storage()
+    except Exception as err:  # pylint: disable=broad-exception-caught
+        return jsonify({'error': f'failed to fetch media state: {err}'}), 502
+    return jsonify(result)
+
+
+@api_blueprint.post('/devices/<int:device_id>/media/fetch')
+def fetch_device_media_from_url(device_id: int):
+    """Tell the device to download an image from a URL."""
+    row = _device_row_with_web_auth(device_id)
+    if row is None:
+        return jsonify({'error': 'device not found'}), 404
+    payload = request.get_json(silent=True) or {}
+    url = (payload.get('url') or '').strip()
+    if not url:
+        return jsonify({'error': 'url is required'}), 400
+    key_path = Path(current_app.config['SECRET_KEY_PATH'])
+    http_basic = _http_basic_from_auth_row(key_path, row)
+    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
+    try:
+        file_name = client.get_mass_storage_filename_from_url(url)
+        client.fetch_mass_storage_from_url(file_name, url)
+    except Exception as err:  # pylint: disable=broad-exception-caught
+        return jsonify({'error': f'failed to fetch image from URL: {err}'}), 502
+    return jsonify({'device_id': device_id, 'fileName': file_name})
+
+
+@api_blueprint.put('/devices/<int:device_id>/media/mount')
+def mount_device_media(device_id: int):
+    """Mount a backing file on the device."""
+    row = _device_row_with_web_auth(device_id)
+    if row is None:
+        return jsonify({'error': 'device not found'}), 404
+    payload = request.get_json(silent=True) or {}
+    file_name = (payload.get('fileName') or '').strip()
+    mode = (payload.get('mode') or '').strip()
+    if not file_name or not mode:
+        return jsonify({'error': 'fileName and mode are required'}), 400
+    key_path = Path(current_app.config['SECRET_KEY_PATH'])
+    http_basic = _http_basic_from_auth_row(key_path, row)
+    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
+    try:
+        client.mount_mass_storage(file_name, mode)
+    except Exception as err:  # pylint: disable=broad-exception-caught
+        return jsonify({'error': f'failed to mount image: {err}'}), 502
+    return jsonify({'device_id': device_id, 'mounted': True, 'fileName': file_name, 'mode': mode})
+
+
+@api_blueprint.put('/devices/<int:device_id>/media/eject')
+def eject_device_media(device_id: int):
+    """Eject the currently mounted image on the device."""
+    row = _device_row_with_web_auth(device_id)
+    if row is None:
+        return jsonify({'error': 'device not found'}), 404
+    key_path = Path(current_app.config['SECRET_KEY_PATH'])
+    http_basic = _http_basic_from_auth_row(key_path, row)
+    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
+    try:
+        client.eject_mass_storage()
+    except Exception as err:  # pylint: disable=broad-exception-caught
+        return jsonify({'error': f'failed to eject media: {err}'}), 502
+    return jsonify({'device_id': device_id, 'ejected': True})

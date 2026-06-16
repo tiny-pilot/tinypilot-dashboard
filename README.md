@@ -22,7 +22,66 @@ A self-hosted dashboard for monitoring and controlling multiple TinyPilot device
 - A [TinyPilot Automation License](https://tinypilotkvm.com/pages/automation) on each device — required for the live and on-demand screenshots the dashboard displays.
 - A modern browser (Chrome, Firefox, Safari, or Edge).
 
-## Install
+## Deploy on DigitalOcean
+
+For always-on access from anywhere on your Tailscale network, run the
+dashboard on a DigitalOcean droplet. All droplet sizes run identical
+software — choose based on your workload:
+
+| Use case | Size | Cost |
+|---|---|---|
+| Dashboard only, light use | `s-1vcpu-1gb` | $6/mo |
+| Dashboard only, comfortable | `s-1vcpu-2gb` | $12/mo |
+| Dashboard + heavier polling | `s-2vcpu-4gb` | $24/mo |
+| Dashboard + AI agent (Cursor/Claude Code) | `s-4vcpu-8gb` | $48/mo |
+
+Droplets can be resized in the DigitalOcean control panel at any time
+without data loss.
+
+### Steps
+
+1. Make sure you have an [SSH key added to your DigitalOcean account](https://cloud.digitalocean.com/account/security).
+   DigitalOcean requires one at droplet creation — you won't need to use it
+   day-to-day once Tailscale is running.
+2. [Create a DigitalOcean droplet](https://cloud.digitalocean.com/droplets/new)
+   running **Ubuntu 24.04 LTS**.
+3. In **Additional Options → Startup script**, paste the contents of
+   [`deploy/cloud-init.sh`](deploy/cloud-init.sh) from this repository.
+4. At the top of the pasted script, set your Tailscale auth key
+   (see below). Leave it blank to skip Tailscale.
+5. Click **Create Droplet**. The dashboard installs automatically on
+   first boot. Allow about 10 minutes (faster on larger droplets), then
+   open `https://<machine-name>.<tailnet>.ts.net` in your browser — that
+   is your dashboard URL. (The machine name comes from the droplet name
+   you set in step 2.)
+
+### Tailscale (strongly recommended)
+
+[Generate a reusable auth key](https://login.tailscale.com/admin/settings/keys)
+in your Tailscale admin console, then set it at the top of the
+cloud-init script:
+
+```
+TAILSCALE_AUTH_KEY="tskey-auth-xxxxxxxx"
+```
+
+Once setup completes, the dashboard is available at
+`https://<machine-name>.<tailnet>.ts.net` — accessible only to devices
+on your Tailscale network, with HTTPS provided automatically.
+
+**Without Tailscale:** the dashboard is localhost-only. Access it via
+SSH tunnel (`ssh -L 8080:localhost:8080 root@<droplet-ip>`) and open
+`http://localhost:8080`. For additional server hardening, see
+DigitalOcean's [Initial Server Setup guide](https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu).
+
+### Updates
+
+The droplet auto-updates the dashboard daily at 3am. No action required.
+
+## Run locally
+
+For running on a machine that is already on the same network as your
+TinyPilot devices:
 
 1. Clone or download this repository.
 2. From the repository directory, start the dashboard:
@@ -39,7 +98,9 @@ To stop the dashboard:
 docker compose down
 ```
 
-Compose binds to `127.0.0.1:8080` on the host by default, so the UI is reachable only from the machine running it. To expose it to other hosts on your trusted network, see [Deployment & security](#deployment--security).
+Compose binds to `127.0.0.1:8080` on the host by default, so the UI is
+reachable only from the machine running it. To expose it to other hosts
+on your trusted network, see [Deployment & security](#deployment--security).
 
 ## Adding a device
 
@@ -51,7 +112,7 @@ Compose binds to `127.0.0.1:8080` on the host by default, so the UI is reachable
 
 ## Deployment & security
 
-The dashboard is designed to live **inside a network perimeter you already trust**. It does not authenticate inbound users and does not implement CSRF protection on its API; the deployment boundary *is* the security boundary.
+The dashboard is designed to live **inside a network perimeter you already trust**. It does not authenticate inbound users — there are no login sessions or cookies — so standard CSRF attacks (which require a session to hijack) do not apply to this release. State-changing API requests require `Content-Type: application/json`, which triggers a browser CORS preflight that blocks cross-origin requests. If HTTP authentication is added in a future release, CSRF token protection will be required alongside it.
 
 ### Deploy behind a trusted perimeter — pick one
 
