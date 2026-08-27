@@ -11,15 +11,15 @@ A self-hosted dashboard for monitoring and controlling multiple TinyPilot device
 ## What you get
 
 - One web UI that lists your TinyPilot devices, up to four per page, with a live screenshot of the connected system on each card.
-- One-click device addition (friendly name + TinyPilot URL).
+- One-click device addition (friendly name + TinyPilot URL + Automation API key).
 - Per-device snapshot of TinyPilot status: connected display resolution, streaming mode (H.264 with bitrate, or MJPEG with framerate and quality), firmware version, network info, and more.
-- Encrypted at-rest storage for device credentials and tokens.
+- Encrypted at-rest storage for Automation API keys.
 
 ## Requirements
 
 - A host that can already reach your TinyPilot devices over LAN, VPN, or a private overlay. The dashboard does **not** create that connectivity for you.
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose.
-- A [TinyPilot Automation License](https://tinypilotkvm.com/pages/automation) on each device — required for the live and on-demand screenshots the dashboard displays.
+- TinyPilot Pro **3.2.0 or newer** with an Automation API key (System → Automation). A [TinyPilot Automation License](https://tinypilotkvm.com/pages/automation) is required for screenshots.
 - A modern browser (Chrome, Firefox, Safari, or Edge).
 
 ## Deploy on DigitalOcean
@@ -105,10 +105,8 @@ on your trusted network, see [Deployment & security](#deployment--security).
 ## Adding a device
 
 1. Click **Add a device**.
-2. Enter a friendly name (e.g. "Rack A KVM") and the TinyPilot URL (e.g. `https://tinypilot-rack-a.local` or `https://192.168.1.50`).
+2. Enter a friendly name (e.g. "Rack A KVM"), the TinyPilot URL (e.g. `https://tinypilot-rack-a.local` or `https://192.168.1.50`), and an Automation API key from the device (System → Automation).
 3. Save. The dashboard will pull a live screenshot and TinyPilot status.
-
-**Alpha limitation:** this release supports TinyPilot devices whose Web UI is **not** protected by a username/password. Username/password support is planned for a future release.
 
 ## Deployment & security
 
@@ -126,7 +124,7 @@ If none of those apply to your environment, please **do not run this alpha**.
 
 - Anyone who can reach `http://<host>:8080` can add, delete, and snapshot devices. Treat reachability to the dashboard as equivalent to administrative access.
 - TinyPilot devices ship with self-signed TLS certificates. The dashboard intentionally skips certificate verification when talking to them so it works out of the box; the perimeter requirement above bounds the resulting risk.
-- Device credentials and tokens are encrypted on disk. Host filesystem permissions and full-disk encryption are your last line of defense — protect the host accordingly.
+- Device Automation API keys are encrypted on disk. Host filesystem permissions and full-disk encryption are your last line of defense — protect the host accordingly.
 
 ## Data and backup
 
@@ -160,7 +158,7 @@ Source layout and conventions for anyone reading the code or auditing what the d
 **Frontend** (`app/static/`, `app/templates/`)
 
 - `templates/index.html` — Jinja shell that loads the `<dashboard-app>` web component and static assets.
-- `static/js/dashboard-app.js` — root custom element with shadow DOM: top bar, theme toggle, Add-a-device modal, paging (four devices per page), and the device grid (`device-grid--n1` … `device-grid--n4`, one column per visible device).
+- `static/js/dashboard-app.js` — root custom element with shadow DOM: top bar, theme toggle, Add-a-device modal, paging (four devices per page), and a responsive device grid (1 → 2 → 4 columns).
 - `static/js/components/device-card.js` — one custom element per TinyPilot target. Owns the screenshot controls and the collapsed/expanded TinyPilot snapshot panel.
 - `static/js/lib/` — shared helpers (`strings.js`, `snapshot-view.js`).
 - `static/js/api.js` — thin `fetch` wrappers attached to `window.dashboardApi`.
@@ -170,13 +168,13 @@ Source layout and conventions for anyone reading the code or auditing what the d
 - `__init__.py` — Flask app factory.
 - `api.py` — `/api/*` blueprint and route handlers.
 - `db.py` — SQLite connection helper and schema bootstrap.
-- `tinypilot_client.py` — HTTP client wrapping TinyPilot's Automation and Web UI JSON endpoints.
+- `tinypilot_client.py` — HTTP client for TinyPilot Automation API-key routes.
 - `resolution.py` — normalizers for the various shapes TinyPilot uses to report "connected device resolution".
 - `snapshot_service.py` — atomic latest-screenshot writer.
 - `auth_store.py`, `crypto.py` — Fernet-encrypted at-rest secrets.
 
 ### TinyPilot APIs the dashboard uses
 
-- **[TinyPilot REST API](https://tinypilotkvm.com/pages/tinypilot-rest-api)** (`/api/v1/*`, Bearer auth) — used to refresh automation tokens and fetch screenshots. Requires a [TinyPilot Automation License](https://tinypilotkvm.com/pages/automation) on the device.
-- **Web UI JSON** (`/api/*`) — used to read device snapshot fields (version, network, video settings, etc.) via the same session the in-browser TinyPilot app uses.
+- **[TinyPilot REST API](https://tinypilotkvm.com/pages/tinypilot-rest-api)** (`/api/v1/*`, Bearer API key) — screenshots and related Automation routes. Requires Pro **3.2.0+** and a [TinyPilot Automation License](https://tinypilotkvm.com/pages/automation).
+- **Allowlisted device JSON** (`/api/version`, `/api/network/status`, `/api/settings/video`, `/state`) — snapshot fields, same Bearer key.
 

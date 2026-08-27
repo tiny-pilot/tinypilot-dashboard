@@ -1,5 +1,5 @@
 import './components/device-card.js';
-import { escapeHtml, formatRelativeTime } from './lib/strings.js';
+import { formatRelativeTime } from './lib/strings.js';
 
 const DEVICES_PER_PAGE = 4;
 const CONNECTED_STATUS_REFRESH_INTERVAL_MS = 30_000;
@@ -44,11 +44,15 @@ class DashboardApp extends HTMLElement {
           <form id="add-device-form" class="form-grid">
             <label>
               Friendly name
-              <input name="friendly_name" required>
+              <input name="friendly_name" required autocomplete="off">
             </label>
             <label>
               TinyPilot device URL
-              <input name="base_url" type="url" placeholder="https://192.168.1.44" required>
+              <input name="base_url" type="url" placeholder="https://192.168.1.44" required autocomplete="off">
+            </label>
+            <label>
+              API key
+              <input name="api_key" type="password" required autocomplete="off" spellcheck="false">
             </label>
             <button type="submit">Add a device</button>
           </form>
@@ -177,6 +181,7 @@ class DashboardApp extends HTMLElement {
       const payload = {
         friendly_name: formData.get('friendly_name'),
         base_url: formData.get('base_url'),
+        api_key: formData.get('api_key'),
       };
       const result = await window.dashboardApi.postJson('/api/devices', payload);
       if (result.error) {
@@ -256,89 +261,6 @@ class DashboardApp extends HTMLElement {
     }
     if (action === 'fetch-device-snapshot') {
       await card.refreshSnapshot();
-      return;
-    }
-    if (action === 'fetch-media') {
-      const statusEl = card.querySelector(`#virtual-media-status-${deviceId}`);
-      const urlInput = card.querySelector(`#virtual-media-url-${deviceId}`);
-      const url = urlInput ? urlInput.value.trim() : '';
-      if (!url) {
-        if (statusEl) {
-          statusEl.textContent = 'Please enter a URL.';
-        }
-        return;
-      }
-      if (statusEl) {
-        statusEl.textContent = 'Downloading…';
-      }
-      const fetchResult = await window.dashboardApi.postJson(
-        `/api/devices/${deviceId}/media/fetch`,
-        { url },
-      );
-      if (fetchResult.error) {
-        if (statusEl) {
-          statusEl.textContent = `Failed: ${fetchResult.error}`;
-        }
-      } else {
-        await card.refreshMedia();
-      }
-      return;
-    }
-    if (action === 'mount-media') {
-      const fileSelect = card.querySelector(`#virtual-media-file-${deviceId}`);
-      const modeSelect = card.querySelector(`#virtual-media-mode-${deviceId}`);
-      const statusEl = card.querySelector(`#virtual-media-status-${deviceId}`);
-      const fileName = fileSelect ? fileSelect.value : '';
-      const mode = modeSelect ? modeSelect.value : 'CDROM';
-      if (!fileName) {
-        if (statusEl) {
-          statusEl.textContent = 'Please select an image.';
-        }
-        return;
-      }
-      const mountResult = await window.dashboardApi.putJson(
-        `/api/devices/${deviceId}/media/mount`,
-        { fileName, mode },
-      );
-      if (mountResult.error) {
-        if (statusEl) {
-          statusEl.textContent = `Mount failed: ${mountResult.error}`;
-        }
-      } else {
-        await card.refreshMedia();
-      }
-      return;
-    }
-    if (action === 'eject-media') {
-      const ejectArea = card.querySelector(`#virtual-media-eject-area-${deviceId}`);
-      const mountedName = ejectArea
-        ? ejectArea.closest('.virtual-media-body').querySelector('dd')?.textContent || 'this image'
-        : 'this image';
-      if (ejectArea) {
-        ejectArea.innerHTML = `
-          <span class="virtual-media-confirm-text">Eject ${escapeHtml(mountedName)}?</span>
-          <button type="button" data-action="eject-media-confirm" data-device-id="${deviceId}">Eject</button>
-          <button type="button" data-action="eject-media-cancel" data-device-id="${deviceId}">Cancel</button>
-        `;
-      }
-      return;
-    }
-    if (action === 'eject-media-confirm') {
-      const statusEl = card.querySelector(`#virtual-media-status-${deviceId}`);
-      const ejectResult = await window.dashboardApi.putJson(
-        `/api/devices/${deviceId}/media/eject`,
-      );
-      if (ejectResult.error) {
-        if (statusEl) {
-          statusEl.textContent = `Eject failed: ${ejectResult.error}`;
-        }
-      } else {
-        await card.refreshMedia();
-      }
-      return;
-    }
-    if (action === 'eject-media-cancel') {
-      await card.refreshMedia();
     }
   }
 
@@ -368,9 +290,10 @@ class DashboardApp extends HTMLElement {
     const container = this._elements.deviceSections;
     container.innerHTML = '';
     container.className = 'device-grid';
-    const count = Math.min(devices.length, DEVICES_PER_PAGE);
-    if (count > 0) {
-      container.classList.add(`device-grid--n${count}`);
+    // Only special-case a solitary card (centered max-width). Multi-card
+    // columns come from CSS auto-fit, not from device-grid--n2/3/4.
+    if (devices.length === 1) {
+      container.classList.add('device-grid--n1');
     }
     for (const device of devices) {
       const card = document.createElement('device-card');
@@ -443,6 +366,14 @@ class DashboardApp extends HTMLElement {
       }
       connectedStatus.textContent = `Screenshot refreshed ${formatRelativeTime(capturedAt)}.`;
     }
+    // "Last checked" is baked in at snapshot time; refresh relative labels so
+    // they age past "just now" like screenshot status does.
+    for (const el of this._elements.deviceSections.querySelectorAll('.status-checked-at')) {
+      const checkedAt = el.getAttribute('data-checked-at');
+      if (checkedAt) {
+        el.textContent = formatRelativeTime(checkedAt);
+      }
+    }
   }
 
   async _refreshVisibleDevicePanels() {
@@ -454,7 +385,6 @@ class DashboardApp extends HTMLElement {
       }
       await card.refreshScreenshot(this._screenshotCapturedAtByDevice);
       await card.refreshSnapshot();
-      await card.refreshMedia();
     }
   }
 

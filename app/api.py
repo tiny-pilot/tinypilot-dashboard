@@ -36,79 +36,48 @@ def get_version():
     """Report the running dashboard version (useful for bug reports)."""
     return jsonify({'version': current_app.config['DASHBOARD_VERSION']})
 
-_SQL_DEVICE_INNER_AUTH = """
+_SQL_DEVICE_AUTH = """
     SELECT
         devices.base_url,
-        device_auth.encrypted_web_username,
-        device_auth.encrypted_web_password
+        device_auth.encrypted_automation_token
     FROM devices
     JOIN device_auth ON device_auth.device_id = devices.id
     WHERE devices.id = ?
 """
 
 
-def _device_row_with_web_auth(device_id: int):
-    """Return device URL and encrypted Web UI auth fields, or None if the row is missing."""
-    return get_db().execute(_SQL_DEVICE_INNER_AUTH, (device_id,)).fetchone()
+def _device_row(device_id: int):
+    """Return device URL and encrypted API key, or None if the row is missing."""
+    return get_db().execute(_SQL_DEVICE_AUTH, (device_id,)).fetchone()
 
 
-def _persist_automation_token(db, key_path: Path, device_id: int, token: str) -> None:
-    db.execute(
-        """
-        UPDATE device_auth
-        SET encrypted_automation_token = ?, automation_token_refreshed_at = ?
-        WHERE device_id = ?
-        """,
-        (
-            encrypt_secret(key_path, token),
-            datetime.now(timezone.utc).isoformat(),
-            device_id,
-        ),
-    )
-
-
-def _http_basic_from_auth_row(key_path: Path, auth_row) -> Optional[tuple[str, str]]:
-    """Decode stored Web UI HTTP Basic credentials, or None if none are configured."""
-    if auth_row is None:
+def _api_key_from_auth_row(key_path: Path, auth_row) -> Optional[str]:
+    """Decrypt the stored Automation API key, or None if missing."""
+    if auth_row is None or auth_row['encrypted_automation_token'] is None:
         return None
-    if (
-        auth_row['encrypted_web_username'] is None
-        and auth_row['encrypted_web_password'] is None
-    ):
-        return None
-    username = ''
-    password = ''
-    if auth_row['encrypted_web_username'] is not None:
-        username = decrypt_secret(key_path, auth_row['encrypted_web_username'])
-    if auth_row['encrypted_web_password'] is not None:
-        password = decrypt_secret(key_path, auth_row['encrypted_web_password'])
-    return (username, password)
+    return decrypt_secret(key_path, auth_row['encrypted_automation_token'])
 
 
-def _attempt_automation_token_refresh(db, device_id: int, base_url: str):
-    """
-    Fetch and store an Automation API token. TinyPilot expects the Automation
-    license to be activated on the device; POST /api/v1/auth typically needs no
-    body. We always try once on create so devices with Automation already enabled
-    get a token even when the dashboard does not store a license key.
-    """
+def _client_with_api_key(device_id: int):
+    """Return (TinyPilotClient, None) or (None, (jsonify_response, status))."""
+    row = _device_row(device_id)
+    if row is None:
+        return None, (jsonify({'error': 'device not found'}), 404)
     key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    auth_row = db.execute(
-        """
-        SELECT encrypted_web_username, encrypted_web_password
-        FROM device_auth
-        WHERE device_id = ?
-        """,
-        (device_id,),
-    ).fetchone()
-    http_basic = _http_basic_from_auth_row(key_path, auth_row)
-    client = TinyPilotClient(base_url, http_basic=http_basic)
-    try:
-        automation_token = client.refresh_automation_token()
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        return False, str(err)
-    _persist_automation_token(db, key_path, device_id, automation_token)
-    return True, None
+    api_key = _api_key_from_auth_row(key_path, row)
+    if not api_key:
+        return None, (
+            jsonify(
+                {
+                    'error': (
+                        'api key not configured; add the device again with an '
+                        'API key from System → Automation'
+                    )
+                }
+            ),
+            400,
+        )
+    return TinyPilotClient(row['base_url'], api_key=api_key), None
 
 
 @api_blueprint.get('/devices')
@@ -124,7 +93,7 @@ def list_devices():
             CASE
                 WHEN device_auth.encrypted_automation_token IS NOT NULL THEN 1
                 ELSE 0
-            END AS automation_token_configured
+            END AS api_key_configured
         FROM devices
         LEFT JOIN device_runtime_state ON device_runtime_state.device_id = devices.id
         LEFT JOIN device_auth ON device_auth.device_id = devices.id
@@ -138,7 +107,7 @@ def list_devices():
             'base_url': row['base_url'],
             'latest_screenshot_captured_at': row['latest_screenshot_captured_at'],
             'screenshot_refresh_interval_minutes': row['screenshot_refresh_interval_minutes'] or 0,
-            'automation_token_configured': bool(row['automation_token_configured']),
+            'api_key_configured': bool(row['api_key_configured']),
         }
         for row in rows
     ]
@@ -150,9 +119,12 @@ def create_device():
     payload = request.get_json(silent=True) or {}
     friendly_name = (payload.get('friendly_name') or '').strip()
     base_url = (payload.get('base_url') or '').strip()
+    api_key = (payload.get('api_key') or '').strip()
 
-    if not friendly_name or not base_url:
-        return jsonify({'error': 'friendly_name and base_url are required'}), 400
+    if not friendly_name or not base_url or not api_key:
+        return jsonify(
+            {'error': 'friendly_name, base_url, and api_key are required'}
+        ), 400
 
     key_path = Path(current_app.config['SECRET_KEY_PATH'])
     db = get_db()
@@ -165,35 +137,20 @@ def create_device():
     )
     device_id = cursor.lastrowid
 
-    encrypted_automation_license_key = None
-    if payload.get('automation_license_key'):
-        encrypted_automation_license_key = encrypt_secret(
-            key_path,
-            payload['automation_license_key'],
-        )
-
-    encrypted_web_username = None
-    if payload.get('web_username'):
-        encrypted_web_username = encrypt_secret(key_path, payload['web_username'])
-
-    encrypted_web_password = None
-    if payload.get('web_password'):
-        encrypted_web_password = encrypt_secret(key_path, payload['web_password'])
-
+    # Store the persistent Automation API key in encrypted_automation_token
+    # (same Bearer secret shape as the former ephemeral token).
     db.execute(
         """
         INSERT INTO device_auth (
             device_id,
-            encrypted_automation_license_key,
-            encrypted_web_username,
-            encrypted_web_password
-        ) VALUES (?, ?, ?, ?)
+            encrypted_automation_token,
+            automation_token_refreshed_at
+        ) VALUES (?, ?, ?)
         """,
         (
             device_id,
-            encrypted_automation_license_key,
-            encrypted_web_username,
-            encrypted_web_password,
+            encrypt_secret(key_path, api_key),
+            datetime.now(timezone.utc).isoformat(),
         ),
     )
     db.execute(
@@ -203,12 +160,6 @@ def create_device():
         """,
         (device_id,),
     )
-
-    automation_token_refreshed, automation_error = _attempt_automation_token_refresh(
-        db=db,
-        device_id=device_id,
-        base_url=base_url,
-    )
     db.commit()
 
     return jsonify(
@@ -217,8 +168,7 @@ def create_device():
                 'id': device_id,
                 'friendly_name': friendly_name,
                 'base_url': base_url,
-                'automation_token_refreshed': automation_token_refreshed,
-                'automation_error': automation_error,
+                'api_key_configured': True,
             }
         }
     ), 201
@@ -263,60 +213,18 @@ def delete_device(device_id: int):
     return jsonify({'deleted': True, 'device_id': device_id})
 
 
-@api_blueprint.post('/devices/<int:device_id>/automation/refresh-token')
-def refresh_automation_token(device_id: int):
-    row = _device_row_with_web_auth(device_id)
-    if row is None:
-        return jsonify({'error': 'device not found'}), 404
-    key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    http_basic = _http_basic_from_auth_row(key_path, row)
-    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
-    try:
-        automation_token = client.refresh_automation_token()
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': f'failed to refresh automation token: {err}'}), 502
-
-    db = get_db()
-    _persist_automation_token(db, key_path, device_id, automation_token)
-    db.commit()
-    return jsonify({'device_id': device_id, 'automation_token_refreshed': True})
-
-
 @api_blueprint.post('/devices/<int:device_id>/refresh-screenshot')
 def refresh_screenshot(device_id: int):
-    row = _device_row_with_web_auth(device_id)
-    if row is None:
-        return jsonify({'error': 'device not found'}), 404
+    client, err = _client_with_api_key(device_id)
+    if err is not None:
+        return err
 
-    key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    http_basic = _http_basic_from_auth_row(key_path, row)
-    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
+    try:
+        screenshot = client.get_screenshot()
+    except Exception as err:  # pylint: disable=broad-exception-caught
+        return jsonify({'error': f'failed to refresh screenshot: {err}'}), 502
+
     db = get_db()
-
-    try:
-        fresh_token = client.refresh_automation_token()
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': f'failed to refresh automation token: {err}'}), 502
-
-    _persist_automation_token(db, key_path, device_id, fresh_token)
-    db.commit()
-
-    screenshot = None
-    try:
-        screenshot = client.get_screenshot(fresh_token)
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        if '401' not in str(err):
-            return jsonify({'error': f'failed to refresh screenshot: {err}'}), 502
-        try:
-            fresh_token = client.refresh_automation_token()
-            _persist_automation_token(db, key_path, device_id, fresh_token)
-            db.commit()
-            screenshot = client.get_screenshot(fresh_token)
-        except Exception as retry_err:  # pylint: disable=broad-exception-caught
-            return jsonify(
-                {'error': f'failed to refresh screenshot after token retry: {retry_err}'}
-            ), 502
-
     data_root = Path(current_app.config['DATABASE_PATH']).resolve().parent
     screenshot_path = write_latest_screenshot(data_root / 'screenshots', device_id, screenshot)
     captured_at = datetime.now(timezone.utc).isoformat()
@@ -410,35 +318,6 @@ def get_latest_screenshot(device_id: int):
     return send_file(screenshot_path, mimetype='image/jpeg')
 
 
-@api_blueprint.post('/devices/<int:device_id>/device/refresh-csrf')
-def refresh_csrf_token(device_id: int):
-    row = _device_row_with_web_auth(device_id)
-    if row is None:
-        return jsonify({'error': 'device not found'}), 404
-
-    key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    http_basic = _http_basic_from_auth_row(key_path, row)
-    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
-    try:
-        csrf_token = client.refresh_csrf_token()
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': f'failed to refresh csrf token: {err}'}), 502
-
-    encrypted_csrf_token = encrypt_secret(key_path, csrf_token)
-    db = get_db()
-    db.execute(
-        """
-        UPDATE device_auth
-        SET encrypted_csrf_token = ?
-        WHERE device_id = ?
-        """,
-        (encrypted_csrf_token, device_id),
-    )
-    db.commit()
-    return jsonify({'device_id': device_id, 'csrf_refreshed': True})
-
-
-
 def _safe_fetch(fetcher):
     try:
         return fetcher(), None
@@ -454,9 +333,7 @@ def get_device_snapshot(device_id: int):
             devices.id,
             devices.friendly_name,
             devices.base_url,
-            device_auth.encrypted_automation_token,
-            device_auth.encrypted_web_username,
-            device_auth.encrypted_web_password
+            device_auth.encrypted_automation_token
         FROM devices
         LEFT JOIN device_auth ON device_auth.device_id = devices.id
         WHERE devices.id = ?
@@ -467,41 +344,31 @@ def get_device_snapshot(device_id: int):
         return jsonify({'error': 'device not found'}), 404
 
     key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    http_basic = _http_basic_from_auth_row(key_path, row)
-    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
+    api_key = _api_key_from_auth_row(key_path, row)
+    if not api_key:
+        return jsonify(
+            {
+                'error': (
+                    'api key not configured; add the device again with an '
+                    'API key from System → Automation'
+                )
+            }
+        ), 400
 
-    automation_token_plain = None
-    automation_token_error = None
-    db = get_db()
-    try:
-        automation_token_plain = client.refresh_automation_token()
-        _persist_automation_token(db, key_path, row['id'], automation_token_plain)
-        db.commit()
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        automation_token_error = str(err)
+    client = TinyPilotClient(row['base_url'], api_key=api_key)
 
+    # API-key allowlist (Pro 3.2.0+): version, network, video, /state, screenshot.
+    # Skip Web UI session/CSRF-only routes (auth, requiresHttps, virtual media).
     status, status_error = _safe_fetch(client.get_status)
-    auth_status, auth_error = _safe_fetch(client.get_auth_status)
     version, version_error = _safe_fetch(client.get_version)
     network, network_error = _safe_fetch(client.get_network_status)
-    requires_https, https_error = _safe_fetch(client.get_requires_https)
     video, video_error = _safe_fetch(client.get_video_settings)
-
-    # Unofficial `GET /state` uses the same Automation bearer; refresh token above
-    # so resolution tracks the latest session.
-    automation_state = None
-    automation_state_error = automation_token_error
-    if automation_token_plain:
-        automation_state, automation_state_error = _safe_fetch(
-            lambda token=automation_token_plain: client.get_automation_state(token)
-        )
+    automation_state, automation_state_error = _safe_fetch(client.get_automation_state)
 
     last_error = (
         status_error
-        or auth_error
         or version_error
         or network_error
-        or https_error
         or video_error
         or automation_state_error
     )
@@ -510,11 +377,10 @@ def get_device_snapshot(device_id: int):
         error is None
         for error in (
             status_error,
-            auth_error,
             version_error,
             network_error,
-            https_error,
             video_error,
+            automation_state_error,
         )
     )
 
@@ -528,20 +394,16 @@ def get_device_snapshot(device_id: int):
         'device_url': row['base_url'],
         'online': online,
         'software_version': (version or {}).get('version', 'unknown'),
-        'web_session_status': 'connected' if auth_status and not auth_error else 'unknown',
-        'management_role': (auth_status or {}).get('role') or 'unknown',
         'last_checked': datetime.now(timezone.utc).isoformat(),
-        'csrf_status': 'unknown',
-        'automation_api_status': 'configured' if automation_token_plain else 'not_configured',
+        'api_key_status': 'configured',
     }
 
     expanded = {
         'reachability': {'status': status, 'error': status_error},
-        'web_session': {'status': auth_status, 'error': auth_error},
         'version': {'status': version, 'error': version_error},
         'network': {'data': network or {}, 'error': network_error},
-        'https_requirement': {'status': requires_https, 'error': https_error},
         'video_settings': {'status': video, 'error': video_error},
+        'automation_state': {'status': automation_state, 'error': automation_state_error},
         'connected_device_resolution': connected_resolution,
         'last_management_error': last_error,
     }
@@ -554,77 +416,3 @@ def get_device_snapshot(device_id: int):
             'expanded': expanded,
         }
     )
-
-
-@api_blueprint.get('/devices/<int:device_id>/media')
-def get_device_media(device_id: int):
-    """Return current virtual media state (backing files + mount mode) for a device."""
-    row = _device_row_with_web_auth(device_id)
-    if row is None:
-        return jsonify({'error': 'device not found'}), 404
-    key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    http_basic = _http_basic_from_auth_row(key_path, row)
-    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
-    try:
-        result = client.get_mass_storage()
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': f'failed to fetch media state: {err}'}), 502
-    return jsonify(result)
-
-
-@api_blueprint.post('/devices/<int:device_id>/media/fetch')
-def fetch_device_media_from_url(device_id: int):
-    """Tell the device to download an image from a URL."""
-    row = _device_row_with_web_auth(device_id)
-    if row is None:
-        return jsonify({'error': 'device not found'}), 404
-    payload = request.get_json(silent=True) or {}
-    url = (payload.get('url') or '').strip()
-    if not url:
-        return jsonify({'error': 'url is required'}), 400
-    key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    http_basic = _http_basic_from_auth_row(key_path, row)
-    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
-    try:
-        file_name = client.get_mass_storage_filename_from_url(url)
-        client.fetch_mass_storage_from_url(file_name, url)
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': f'failed to fetch image from URL: {err}'}), 502
-    return jsonify({'device_id': device_id, 'fileName': file_name})
-
-
-@api_blueprint.put('/devices/<int:device_id>/media/mount')
-def mount_device_media(device_id: int):
-    """Mount a backing file on the device."""
-    row = _device_row_with_web_auth(device_id)
-    if row is None:
-        return jsonify({'error': 'device not found'}), 404
-    payload = request.get_json(silent=True) or {}
-    file_name = (payload.get('fileName') or '').strip()
-    mode = (payload.get('mode') or '').strip()
-    if not file_name or not mode:
-        return jsonify({'error': 'fileName and mode are required'}), 400
-    key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    http_basic = _http_basic_from_auth_row(key_path, row)
-    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
-    try:
-        client.mount_mass_storage(file_name, mode)
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': f'failed to mount image: {err}'}), 502
-    return jsonify({'device_id': device_id, 'mounted': True, 'fileName': file_name, 'mode': mode})
-
-
-@api_blueprint.put('/devices/<int:device_id>/media/eject')
-def eject_device_media(device_id: int):
-    """Eject the currently mounted image on the device."""
-    row = _device_row_with_web_auth(device_id)
-    if row is None:
-        return jsonify({'error': 'device not found'}), 404
-    key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    http_basic = _http_basic_from_auth_row(key_path, row)
-    client = TinyPilotClient(row['base_url'], http_basic=http_basic)
-    try:
-        client.eject_mass_storage()
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': f'failed to eject media: {err}'}), 502
-    return jsonify({'device_id': device_id, 'ejected': True})

@@ -10,11 +10,11 @@ from app.api import api_blueprint
 from app.db import close_db, init_db
 
 # Public product version. Version bands signal lifecycle stage to customers:
-#   0.1.x  -> alpha
-#   0.5.x  -> beta
-#   1.0.0  -> first stable release
+#   0.1.x / 0.2.x  -> alpha
+#   0.5.x          -> beta
+#   1.0.0          -> first stable release
 # Bump this on every customer-visible release.
-__version__ = '0.1.1'
+__version__ = '0.2.0'
 
 
 def create_app(test_config=None):

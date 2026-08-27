@@ -1,32 +1,24 @@
-import { escapeHtml, stringValue, yesNoUnknown } from './strings.js';
+import { escapeHtml, stringValue } from './strings.js';
 
 function snapshotRow(label, valueText) {
   return `<div class="snapshot-row"><span>${escapeHtml(label)}</span><strong class="snapshot-row__value">${escapeHtml(valueText)}</strong></div>`;
 }
 
-function interfaceLinkLabel(connected) {
-  if (connected === true) {
-    return 'connected';
+function friendlyInterfaceName(name) {
+  const raw = stringValue(name);
+  if (raw === 'eth0') {
+    return 'LAN1';
   }
-  if (connected === false) {
-    return 'disconnected';
+  if (raw === 'eth1') {
+    return 'LAN2';
   }
-  return 'unknown';
+  if (raw === 'wlan0') {
+    return 'Wi-Fi';
+  }
+  return raw || 'Interface';
 }
 
-function formatNetworkInterface(label, iface) {
-  if (!iface || typeof iface !== 'object') {
-    return '';
-  }
-  const ip =
-    stringValue(iface.ipAddress)
-    || stringValue(iface.ip_address)
-    || stringValue(iface.ip)
-    || 'no IP';
-  const mac =
-    stringValue(iface.macAddress)
-    || stringValue(iface.mac_address)
-    || stringValue(iface.mac);
+function interfaceConnected(iface) {
   let connected = iface.isConnected;
   if (connected === undefined) {
     connected = iface.is_connected;
@@ -34,30 +26,70 @@ function formatNetworkInterface(label, iface) {
   if (connected === undefined) {
     connected = iface.connected;
   }
-  const rows = [snapshotRow(`${label} IP`, ip)];
-  if (mac) {
-    rows.push(snapshotRow(`${label} MAC`, mac));
+  return connected;
+}
+
+function formatNetworkInterface(iface) {
+  if (!iface || typeof iface !== 'object') {
+    return '';
   }
-  rows.push(snapshotRow(`${label} status`, interfaceLinkLabel(connected)));
-  return rows.join('');
+  const label = friendlyInterfaceName(iface.name);
+  const ip =
+    stringValue(iface.ipAddress)
+    || stringValue(iface.ip_address)
+    || stringValue(iface.ip);
+  const mac =
+    stringValue(iface.macAddress)
+    || stringValue(iface.mac_address)
+    || stringValue(iface.mac);
+  const connected = interfaceConnected(iface);
+
+  // One primary line: IP when present, otherwise link state (IP + status are
+  // usually redundant for a glanceable dashboard).
+  let primary = ip;
+  if (!primary) {
+    if (connected === true) {
+      primary = 'No IP';
+    } else if (connected === false) {
+      primary = 'No link';
+    } else {
+      primary = 'unknown';
+    }
+  }
+
+  const rows = [snapshotRow(label, primary)];
+  if (mac) {
+    rows.push(snapshotRow('MAC', mac));
+  }
+  return `<div class="snapshot-iface">${rows.join('')}</div>`;
 }
 
 function formatNetworkData(data) {
   if (!data || typeof data !== 'object') {
     return snapshotRow('Network', 'None reported');
   }
-  const { ethernet, wifi } = data;
-  const parts = [];
-  if (ethernet) {
-    parts.push(formatNetworkInterface('Ethernet', ethernet));
+  // Pro 3.2.0+: { interfaces: [{ name, ipAddress, macAddress, isConnected }, ...] }
+  if (Array.isArray(data.interfaces)) {
+    const parts = data.interfaces
+      .map((iface) => formatNetworkInterface(iface))
+      .filter(Boolean);
+    if (parts.length === 0) {
+      return snapshotRow('Network', 'None reported');
+    }
+    return `<div class="snapshot-iface-list">${parts.join('')}</div>`;
   }
-  if (wifi) {
-    parts.push(formatNetworkInterface('Wi-Fi', wifi));
+  // Legacy ethernet/wifi shape (pre-3.2.0).
+  const parts = [];
+  if (data.ethernet) {
+    parts.push(formatNetworkInterface({ ...data.ethernet, name: 'eth0' }));
+  }
+  if (data.wifi) {
+    parts.push(formatNetworkInterface({ ...data.wifi, name: 'wlan0' }));
   }
   if (parts.length === 0) {
     return snapshotRow('Network', 'None reported');
   }
-  return parts.join('');
+  return `<div class="snapshot-iface-list">${parts.join('')}</div>`;
 }
 
 // TinyPilot ships two streaming modes today: H.264 and MJPEG. Normalize the
@@ -160,7 +192,6 @@ export function formatExpandedSnapshot(snapshot) {
   const expanded = snapshot.expanded || {};
   const status = expanded.reachability?.status || {};
   const version = expanded.version?.status || {};
-  const https = expanded.https_requirement?.status || {};
   const video = expanded.video_settings?.status || {};
 
   const networkData = expanded.network?.data || {};
@@ -178,10 +209,9 @@ export function formatExpandedSnapshot(snapshot) {
         ${snapshotRow('Target URL', snapshot.source_base_url || 'unknown')}
         ${snapshotRow('Software version', version.version || 'unknown')}
         ${snapshotRow('Reachability', expanded.reachability?.error ? 'Error' : 'OK')}
-        ${snapshotRow('Requires HTTPS', yesNoUnknown(https.requiresHttps))}
       </div>
       <div class="snapshot-section">
-        <h4 class="snapshot-section-title">Network interfaces</h4>
+        <h4 class="snapshot-section-title">Network status</h4>
         ${formatNetworkData(networkData)}
       </div>
       <div class="snapshot-section">
