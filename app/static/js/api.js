@@ -35,10 +35,6 @@ async function getJson(path) {
   return fetchJson(path);
 }
 
-async function putJson(path, body = {}) {
-  return fetchJson(path, { method: 'PUT', body });
-}
-
 async function deleteJson(path) {
   return fetchJson(path, { method: 'DELETE' });
 }
@@ -47,5 +43,4 @@ window.dashboardApi = {
   deleteJson,
   getJson,
   postJson,
-  putJson,
 };

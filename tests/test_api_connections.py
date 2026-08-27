@@ -1,8 +1,6 @@
-from pathlib import Path
 from unittest.mock import patch
 
 from app import create_app
-from app.auth_store import encrypt_secret
 from app.resolution import resolution_from_automation_state
 
 
@@ -27,36 +25,28 @@ def test_create_device_persists_and_lists_device(client):
     payload = {
         'friendly_name': 'Office Rack KVM',
         'base_url': 'https://192.168.1.44',
-        'automation_license_key': 'license-123',
+        'api_key': 'test-api-key',
     }
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.return_value = 'token-from-license'
-        create_response = client.post('/api/devices', json=payload)
+    create_response = client.post('/api/devices', json=payload)
     assert create_response.status_code == 201
-    client_cls.assert_called()
-    _args, kwargs = client_cls.call_args
-    assert kwargs.get('http_basic') is None
     created = create_response.json['device']
     assert created['friendly_name'] == payload['friendly_name']
     assert created['base_url'] == payload['base_url']
+    assert created['api_key_configured'] is True
 
     list_response = client.get('/api/devices')
     assert list_response.status_code == 200
     assert len(list_response.json['devices']) == 1
     listed = list_response.json['devices'][0]
     assert listed['friendly_name'] == payload['friendly_name']
-    assert listed['automation_token_configured'] is True
+    assert listed['api_key_configured'] is True
 
 
-def test_create_device_fetches_token_without_license_payload_when_tinypilot_succeeds(client):
+def test_create_device_requires_api_key(client):
     payload = {'friendly_name': 'Bare URL', 'base_url': 'https://192.168.1.71'}
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.return_value = 'from-device'
-        response = client.post('/api/devices', json=payload)
-    assert response.status_code == 201
-    assert response.json['device']['automation_token_refreshed'] is True
-    listed = client.get('/api/devices').json['devices'][0]
-    assert listed['automation_token_configured'] is True
+    response = client.post('/api/devices', json=payload)
+    assert response.status_code == 400
+    assert 'api_key' in response.json['error']
 
 
 def test_resolution_from_automation_state_accepts_string_dimensions():
@@ -74,31 +64,26 @@ def test_resolution_from_automation_state_accepts_dimension_string():
     assert resolution_from_automation_state(state) == '1280x720'
 
 
-def test_create_device_attempts_automation_token_refresh_when_license_present(client):
+def test_create_device_rejects_blank_api_key(client):
     payload = {
         'friendly_name': 'Licensed Device',
         'base_url': 'https://192.168.1.88',
-        'automation_license_key': 'license-xyz',
+        'api_key': '   ',
     }
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.return_value = 'token-xyz'
-        response = client.post('/api/devices', json=payload)
-
-    assert response.status_code == 201
-    assert response.json['device']['automation_token_refreshed'] is True
+    response = client.post('/api/devices', json=payload)
+    assert response.status_code == 400
 
 
 def test_delete_device_removes_device_and_related_rows(client):
     payload = {
         'friendly_name': 'Delete Me',
         'base_url': 'https://192.168.1.99',
+        'api_key': 'test-api-key',
     }
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.side_effect = RuntimeError('no TinyPilot in tests')
-        create_response = client.post('/api/devices', json=payload)
+    create_response = client.post('/api/devices', json=payload)
     device_id = create_response.json['device']['id']
     list_before = client.get('/api/devices')
-    assert list_before.json['devices'][0]['automation_token_configured'] is False
+    assert list_before.json['devices'][0]['api_key_configured'] is True
 
     delete_response = client.delete(f'/api/devices/{device_id}')
     assert delete_response.status_code == 200
@@ -109,47 +94,25 @@ def test_delete_device_removes_device_and_related_rows(client):
     assert all(device['id'] != device_id for device in list_response.json['devices'])
 
 
-def test_refresh_automation_endpoint(client):
-    create_payload = {
-        'friendly_name': 'Token Device',
-        'base_url': 'https://192.168.1.50',
-    }
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.side_effect = [
-            RuntimeError('no TinyPilot on create'),
-            'token-xyz',
-        ]
-        create_response = client.post('/api/devices', json=create_payload)
-        device_id = create_response.json['device']['id']
-        response = client.post(f'/api/devices/{device_id}/automation/refresh-token')
-
-    assert response.status_code == 200
-    assert response.json['automation_token_refreshed'] is True
-
-    list_response = client.get('/api/devices')
-    listed = next(d for d in list_response.json['devices'] if d['id'] == device_id)
-    assert listed['automation_token_configured'] is True
-
-
 def test_refresh_screenshot_endpoint(client):
     create_payload = {
         'friendly_name': 'Screenshot Device',
         'base_url': 'https://192.168.1.51',
+        'api_key': 'test-api-key',
     }
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.side_effect = RuntimeError('no TinyPilot in tests')
-        create_response = client.post('/api/devices', json=create_payload)
+    create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
     with patch('app.api.TinyPilotClient') as client_cls:
         inst = client_cls.return_value
-        inst.refresh_automation_token.return_value = 'token-xyz'
         inst.get_screenshot.return_value = b'jpeg-bytes'
         response = client.post(f'/api/devices/{device_id}/refresh-screenshot')
 
     assert response.status_code == 200
     assert response.json['screenshot_refreshed'] is True
     assert response.json['screenshot_path'].endswith(f'device-{device_id}-latest.jpg')
+    _args, kwargs = client_cls.call_args
+    assert kwargs.get('api_key') == 'test-api-key'
 
     screenshot_response = client.get(f'/api/devices/{device_id}/latest-screenshot')
     assert screenshot_response.status_code == 200
@@ -160,10 +123,9 @@ def test_set_screenshot_refresh_interval_endpoint(client):
     create_payload = {
         'friendly_name': 'Interval Device',
         'base_url': 'https://192.168.1.77',
+        'api_key': 'test-api-key',
     }
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.side_effect = RuntimeError('no TinyPilot in tests')
-        create_response = client.post('/api/devices', json=create_payload)
+    create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
     response = client.post(
@@ -186,54 +148,40 @@ def test_index_page_loads(client):
     assert b'dashboard-app.js' in response.data
 
 
-def test_refresh_csrf_endpoint(client):
-    create_payload = {
-        'friendly_name': 'Office Rack KVM',
-        'base_url': 'https://192.168.1.44',
-    }
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.side_effect = RuntimeError('no TinyPilot in tests')
-        create_response = client.post('/api/devices', json=create_payload)
-    device_id = create_response.json['device']['id']
-
-    with patch('app.api.TinyPilotClient') as client_cls:
-        tp_client = client_cls.return_value
-        tp_client.refresh_csrf_token.return_value = 'csrf-abc'
-
-        csrf_response = client.post(f'/api/devices/{device_id}/device/refresh-csrf')
-        assert csrf_response.status_code == 200
-        assert csrf_response.json['csrf_refreshed'] is True
-
-    metrics_response = client.get(f'/api/devices/{device_id}/device/metrics')
-    assert metrics_response.status_code == 404
-
-
 def test_device_snapshot_endpoint_returns_collapsed_and_expanded_sections(client):
     create_payload = {
         'friendly_name': 'Office Rack KVM',
         'base_url': 'https://192.168.1.44',
+        'api_key': 'test-api-key',
     }
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.side_effect = RuntimeError('no TinyPilot in tests')
-        create_response = client.post('/api/devices', json=create_payload)
+    create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
     with patch('app.api.TinyPilotClient') as client_cls:
         tp_client = client_cls.return_value
-        tp_client.refresh_automation_token.return_value = 'tok'
-        tp_client.get_status.return_value = {'ok': True}
-        tp_client.get_auth_status.return_value = {'isAuthenticated': True, 'username': 'admin'}
-        tp_client.get_version.return_value = {'version': '2.6.5'}
-        tp_client.get_network_status.return_value = {
-            'ethernet': {'isConnected': True, 'ipAddress': '192.168.1.44', 'macAddress': 'aa:bb:cc:dd:ee:ff'},
-            'wifi': {'isConnected': False, 'ipAddress': ''},
-        }
-        tp_client.get_requires_https.return_value = {'requiresHttps': True}
-        tp_client.get_video_settings.return_value = {'h264Bitrate': 8000, 'streamingMode': 'MJPEG'}
         tp_client.get_status.return_value = {
             'ok': True,
             'video': {'connectedDeviceResolution': '1920x1080'},
         }
+        tp_client.get_version.return_value = {'version': '2.6.5'}
+        tp_client.get_network_status.return_value = {
+            'interfaces': [
+                {
+                    'name': 'eth0',
+                    'isConnected': True,
+                    'ipAddress': '192.168.1.44',
+                    'macAddress': 'aa:bb:cc:dd:ee:ff',
+                },
+                {
+                    'name': 'wlan0',
+                    'isConnected': False,
+                    'ipAddress': None,
+                    'macAddress': None,
+                },
+            ],
+        }
+        tp_client.get_video_settings.return_value = {'h264Bitrate': 8000, 'streamingMode': 'MJPEG'}
+        tp_client.get_automation_state.return_value = {}
 
         snapshot_response = client.get(f'/api/devices/{device_id}/device/snapshot')
 
@@ -241,45 +189,29 @@ def test_device_snapshot_endpoint_returns_collapsed_and_expanded_sections(client
     payload = snapshot_response.json
     assert payload['source_base_url'] == create_payload['base_url']
     assert payload['collapsed']['software_version'] == '2.6.5'
-    assert payload['collapsed']['web_session_status'] == 'connected'
+    assert payload['collapsed']['api_key_status'] == 'configured'
     assert 'connected_device_resolution' not in payload['collapsed']
-    assert payload['expanded']['network']['data']['ethernet']['ipAddress'] == '192.168.1.44'
+    assert payload['expanded']['network']['data']['interfaces'][0]['ipAddress'] == '192.168.1.44'
     assert payload['expanded']['connected_device_resolution'] == '1920x1080'
+    client_cls.assert_called_once()
+    _args, kwargs = client_cls.call_args
+    assert kwargs.get('api_key') == 'test-api-key'
 
 
 def test_device_snapshot_prefers_automation_state_resolution(client):
     create_payload = {
         'friendly_name': 'State Resolution',
         'base_url': 'https://192.168.1.55',
+        'api_key': 'test-api-key',
     }
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.side_effect = RuntimeError('no TinyPilot in tests')
-        create_response = client.post('/api/devices', json=create_payload)
+    create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
-
-    with client.application.app_context():
-        key_path = Path(client.application.config['SECRET_KEY_PATH'])
-        encrypted_token = encrypt_secret(key_path, 'token-abc')
-        from app.db import get_db
-        db = get_db()
-        db.execute(
-            """
-            UPDATE device_auth
-            SET encrypted_automation_token = ?
-            WHERE device_id = ?
-            """,
-            (encrypted_token, device_id),
-        )
-        db.commit()
 
     with patch('app.api.TinyPilotClient') as client_cls:
         tp_client = client_cls.return_value
-        tp_client.refresh_automation_token.return_value = 'tok'
         tp_client.get_status.return_value = {'ok': True}
-        tp_client.get_auth_status.return_value = {}
         tp_client.get_version.return_value = {'version': '3.0.2'}
-        tp_client.get_network_status.return_value = {'ethernet': None, 'wifi': None}
-        tp_client.get_requires_https.return_value = {'requiresHttps': False}
+        tp_client.get_network_status.return_value = {'interfaces': []}
         tp_client.get_video_settings.return_value = {'h264Bitrate': 900}
         tp_client.get_automation_state.return_value = {
             'result': {'source': {'resolution': {'width': 2560, 'height': 1440}}},
@@ -290,19 +222,16 @@ def test_device_snapshot_prefers_automation_state_resolution(client):
     assert snapshot_response.status_code == 200
     assert 'connected_device_resolution' not in snapshot_response.json['collapsed']
     assert snapshot_response.json['expanded']['connected_device_resolution'] == '2560x1440'
-    tp_client.get_automation_state.assert_called_once()
+    tp_client.get_automation_state.assert_called_once_with()
 
 
 def test_latest_screenshot_rejects_paths_outside_screenshots_dir(client, tmp_path):
     create_payload = {
         'friendly_name': 'Path Test',
         'base_url': 'https://192.168.1.80',
+        'api_key': 'test-api-key',
     }
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.side_effect = RuntimeError(
-            'no TinyPilot in tests'
-        )
-        create_response = client.post('/api/devices', json=create_payload)
+    create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
     rogue_path = tmp_path / 'rogue.jpg'
@@ -327,113 +256,20 @@ def test_latest_screenshot_rejects_paths_outside_screenshots_dir(client, tmp_pat
     assert response.data != b'should-not-be-served'
 
 
-def test_refresh_screenshot_retries_after_401_by_refreshing_token(client):
+def test_refresh_screenshot_surfaces_api_errors(client):
     create_payload = {
         'friendly_name': 'Retry Device',
         'base_url': 'https://192.168.1.66',
+        'api_key': 'test-api-key',
     }
-    with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.refresh_automation_token.side_effect = RuntimeError('no TinyPilot in tests')
-        create_response = client.post('/api/devices', json=create_payload)
+    create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
     with patch('app.api.TinyPilotClient') as client_cls:
-        tp_client = client_cls.return_value
-        tp_client.refresh_automation_token.side_effect = ['first-token', 'second-token']
-        tp_client.get_screenshot.side_effect = [
-            Exception('401 Client Error: Unauthorized for url'),
-            b'jpeg-bytes',
-        ]
+        client_cls.return_value.get_screenshot.side_effect = Exception(
+            '403 Client Error: Forbidden'
+        )
         response = client.post(f'/api/devices/{device_id}/refresh-screenshot')
 
-    assert response.status_code == 200
-    assert response.json['screenshot_refreshed'] is True
-
-
-def _create_media_device(client):
-    """Helper: create a device with no automation token for media tests."""
-    with patch('app.api.TinyPilotClient') as cls:
-        cls.return_value.refresh_automation_token.side_effect = RuntimeError('no device')
-        resp = client.post('/api/devices', json={
-            'friendly_name': 'Media Test Device',
-            'base_url': 'https://192.168.1.200',
-        })
-    return resp.json['device']['id']
-
-
-def test_get_media_returns_backing_files(client):
-    device_id = _create_media_device(client)
-    backing_files_response = {
-        'backingFiles': [{'name': 'ubuntu.iso', 'mounted': True, 'loadedBytes': 100, 'totalBytes': 100}],
-        'intermediateFiles': [],
-        'mountMode': 'CDROM',
-    }
-    with patch('app.api.TinyPilotClient') as cls:
-        cls.return_value.get_mass_storage.return_value = backing_files_response
-        response = client.get(f'/api/devices/{device_id}/media')
-
-    assert response.status_code == 200
-    assert response.json['backingFiles'][0]['name'] == 'ubuntu.iso'
-    assert response.json['mountMode'] == 'CDROM'
-
-
-def test_get_media_returns_404_for_unknown_device(client):
-    response = client.get('/api/devices/9999/media')
-    assert response.status_code == 404
-
-
-def test_media_fetch_triggers_device_download(client):
-    device_id = _create_media_device(client)
-    with patch('app.api.TinyPilotClient') as cls:
-        cls.return_value.get_mass_storage_filename_from_url.return_value = 'ubuntu.iso'
-        cls.return_value.fetch_mass_storage_from_url.return_value = None
-        response = client.post(
-            f'/api/devices/{device_id}/media/fetch',
-            json={'url': 'https://example.com/ubuntu.iso'},
-        )
-
-    assert response.status_code == 200
-    assert response.json['fileName'] == 'ubuntu.iso'
-
-
-def test_media_fetch_returns_400_without_url(client):
-    device_id = _create_media_device(client)
-    response = client.post(f'/api/devices/{device_id}/media/fetch', json={})
-    assert response.status_code == 400
-
-
-def test_media_mount_calls_device(client):
-    device_id = _create_media_device(client)
-    with patch('app.api.TinyPilotClient') as cls:
-        cls.return_value.mount_mass_storage.return_value = None
-        response = client.put(
-            f'/api/devices/{device_id}/media/mount',
-            json={'fileName': 'ubuntu.iso', 'mode': 'CDROM'},
-        )
-
-    assert response.status_code == 200
-    cls.return_value.mount_mass_storage.assert_called_once_with('ubuntu.iso', 'CDROM')
-
-
-def test_media_mount_returns_400_without_required_fields(client):
-    device_id = _create_media_device(client)
-    response = client.put(
-        f'/api/devices/{device_id}/media/mount',
-        json={'fileName': 'ubuntu.iso'},
-    )
-    assert response.status_code == 400
-
-
-def test_media_eject_calls_device(client):
-    device_id = _create_media_device(client)
-    with patch('app.api.TinyPilotClient') as cls:
-        cls.return_value.eject_mass_storage.return_value = None
-        response = client.put(f'/api/devices/{device_id}/media/eject')
-
-    assert response.status_code == 200
-    cls.return_value.eject_mass_storage.assert_called_once()
-
-
-def test_media_eject_returns_404_for_unknown_device(client):
-    response = client.put('/api/devices/9999/media/eject')
-    assert response.status_code == 404
+    assert response.status_code == 502
+    assert 'failed to refresh screenshot' in response.json['error']
