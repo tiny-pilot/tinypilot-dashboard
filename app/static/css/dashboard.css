@@ -283,6 +283,12 @@ summary {
   gap: var(--space-2);
 }
 
+.form-grid .form-submit {
+  margin-top: var(--space-4);
+  justify-self: center;
+  min-width: 10rem;
+}
+
 label {
   display: grid;
   gap: var(--space-1);
@@ -609,6 +615,12 @@ button:active {
   cursor: pointer;
 }
 
+.modal-backdrop:hover,
+.modal-backdrop:active {
+  background: rgba(15, 23, 42, 0.55);
+  transform: none;
+}
+
 .modal-panel {
   position: relative;
   z-index: 1;
@@ -650,6 +662,11 @@ button:active {
 }
 
 :root[data-theme="dark"] .modal-backdrop {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+:root[data-theme="dark"] .modal-backdrop:hover,
+:root[data-theme="dark"] .modal-backdrop:active {
   background: rgba(0, 0, 0, 0.65);
 }
 

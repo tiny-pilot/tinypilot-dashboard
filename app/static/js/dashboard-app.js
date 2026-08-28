@@ -1,6 +1,9 @@
 import './components/device-card.js';
 import { formatRelativeTime } from './lib/strings.js';
 
+const ADD_DEVICE_TOGGLE_LABEL = 'Add a device';
+const ADD_DEVICE_MODAL_LABEL = 'Add a TinyPilot device';
+const ADD_DEVICE_SUBMIT_LABEL = 'Add device';
 const DEVICES_PER_PAGE = 4;
 const CONNECTED_STATUS_REFRESH_INTERVAL_MS = 30_000;
 
@@ -26,7 +29,7 @@ class DashboardApp extends HTMLElement {
           ${dashboardVersion ? `<span class="topbar-version" title="Dashboard version">v${dashboardVersion}</span>` : ''}
         </div>
         <div class="topbar-actions">
-          <button id="add-device-toggle" type="button" class="theme-toggle">Add a device</button>
+          <button id="add-device-toggle" type="button" class="theme-toggle">${ADD_DEVICE_TOGGLE_LABEL}</button>
           <button id="theme-toggle" type="button" class="theme-toggle">Dark mode</button>
         </div>
       </header>
@@ -38,7 +41,7 @@ class DashboardApp extends HTMLElement {
         <button type="button" class="modal-backdrop" id="add-device-modal-backdrop" tabindex="-1" aria-label="Close dialog"></button>
         <section class="modal-panel panel">
           <header class="modal-header">
-            <h2 id="add-device-heading">Add a device</h2>
+            <h2 id="add-device-heading">${ADD_DEVICE_MODAL_LABEL}</h2>
             <button type="button" class="modal-close" id="add-device-modal-close" aria-label="Close">&times;</button>
           </header>
           <form id="add-device-form" class="form-grid">
@@ -54,7 +57,7 @@ class DashboardApp extends HTMLElement {
               API key
               <input name="api_key" type="password" required autocomplete="off" spellcheck="false">
             </label>
-            <button type="submit">Add a device</button>
+            <button type="submit" class="form-submit">${ADD_DEVICE_SUBMIT_LABEL}</button>
           </form>
           <p id="add-device-status" class="subtitle"></p>
         </section>
@@ -81,7 +84,7 @@ class DashboardApp extends HTMLElement {
 
   _bind() {
     const e = this._elements;
-    e.addDeviceToggle.textContent = 'Add a device';
+    e.addDeviceToggle.textContent = ADD_DEVICE_TOGGLE_LABEL;
     e.addDeviceToggle.addEventListener('click', () => {
       if (e.addDeviceModal.hasAttribute('hidden')) {
         this._openAddDeviceModal();
@@ -133,7 +136,7 @@ class DashboardApp extends HTMLElement {
   }
 
   _addDeviceModalHeadingText() {
-    return this._allDevices.length === 0 ? 'Add your first device' : 'Add a device';
+    return ADD_DEVICE_MODAL_LABEL;
   }
 
   _syncAddDeviceModalState() {
