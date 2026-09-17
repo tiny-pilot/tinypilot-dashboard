@@ -1,7 +1,14 @@
 import { escapeHtml, formatRelativeTime } from '../lib/strings.js';
 import { formatExpandedSnapshot } from '../lib/snapshot-view.js';
+import {
+  latestVersionFrom,
+  licenseReason,
+  licenseStatusFrom,
+  updateBannerKind,
+} from '../lib/device-update.js';
 
 const AUTOMATION_LICENSE_INFO_URL = 'https://tinypilotkvm.com/pages/automation';
+const UPDATE_POLL_INTERVAL_MS = 3000;
 
 function formatCollapsedSnapshotSummary(c) {
   const checkedAt = c.last_checked || '';
@@ -30,6 +37,8 @@ class DeviceCard extends HTMLElement {
     super();
     this._device = null;
     this._elements = {};
+    this._updatePollTimer = null;
+    this._desiredUpdateVersion = null;
   }
 
   set device(value) {
@@ -49,6 +58,10 @@ class DeviceCard extends HTMLElement {
     }
   }
 
+  disconnectedCallback() {
+    this._stopUpdatePoll();
+  }
+
   _cacheElements() {
     const id = this._device.id;
     this._elements = {
@@ -58,6 +71,7 @@ class DeviceCard extends HTMLElement {
       summaryOutput: this.querySelector(`#device-collapsed-summary-${id}`),
       metricsOutput: this.querySelector(`#device-metrics-output-${id}`),
       intervalInput: this.querySelector(`#screenshot-interval-${id}`),
+      updateBanner: this.querySelector(`#device-update-banner-${id}`),
     };
   }
 
@@ -129,6 +143,7 @@ class DeviceCard extends HTMLElement {
           <div id="device-collapsed-summary-${id}" class="metrics-output">
             Retrieving device snapshot...
           </div>
+          <div id="device-update-banner-${id}" class="device-update-banner" hidden></div>
           <details class="device-details">
             <summary>Expanded TinyPilot device info</summary>
             <div id="device-metrics-output-${id}" class="metrics-output">Retrieving expanded device info...</div>
@@ -218,14 +233,141 @@ class DeviceCard extends HTMLElement {
         summaryOutput.innerHTML = formatCollapsedSnapshotSummary(snapshot.collapsed);
       }
     }
-    if (!metricsOutput) {
+    if (metricsOutput) {
+      if (snapshot.error) {
+        metricsOutput.textContent = snapshot.error;
+      } else {
+        metricsOutput.innerHTML = formatExpandedSnapshot(snapshot);
+      }
+    }
+    if (!snapshot.error) {
+      this._renderUpdateBanner(snapshot);
+    }
+  }
+
+  _stopUpdatePoll() {
+    if (this._updatePollTimer) {
+      window.clearInterval(this._updatePollTimer);
+      this._updatePollTimer = null;
+    }
+  }
+
+  _renderUpdateBanner(snapshot) {
+    const banner = this._elements.updateBanner;
+    if (!banner || !this._device) {
       return;
     }
-    if (snapshot.error) {
-      metricsOutput.textContent = snapshot.error;
+    const id = this._device.id;
+    const currentVersion = snapshot.collapsed?.software_version || '';
+    const softwareUpdate = snapshot.expanded?.software_update || null;
+    const kind = updateBannerKind(softwareUpdate, currentVersion);
+    const latestVersion = latestVersionFrom(softwareUpdate);
+    const licenseStatus = licenseStatusFrom(softwareUpdate);
+    const jobError = softwareUpdate?.job?.updateError;
+
+    if (!kind || kind === 'hidden') {
+      banner.hidden = true;
+      banner.innerHTML = '';
+      this._stopUpdatePoll();
       return;
     }
-    metricsOutput.innerHTML = formatExpandedSnapshot(snapshot);
+
+    banner.hidden = false;
+    if (kind === 'updating') {
+      banner.innerHTML = `
+        <p class="device-update-banner__text">
+          Updating TinyPilot${latestVersion ? ` to ${escapeHtml(latestVersion)}` : ''}…
+          ${jobError ? `<span class="device-update-banner__error">${escapeHtml(jobError)}</span>` : ''}
+        </p>
+      `;
+      this._startUpdatePoll();
+      return;
+    }
+    if (kind === 'error') {
+      banner.innerHTML = `
+        <p class="device-update-banner__text">
+          Could not check for updates:
+          ${escapeHtml(softwareUpdate.latest_error || 'unknown error')}
+        </p>
+      `;
+      this._stopUpdatePoll();
+      return;
+    }
+    if (kind === 'license-blocked') {
+      banner.innerHTML = `
+        <p class="device-update-banner__text">
+          Update available (${escapeHtml(currentVersion)} → ${escapeHtml(latestVersion)}),
+          but ${escapeHtml(licenseReason(licenseStatus))}.
+          <a class="launch-link" href="${escapeHtml(this._device.base_url)}" target="_blank" rel="noopener noreferrer">Attach license in WebUI ↗</a>
+        </p>
+      `;
+      this._stopUpdatePoll();
+      return;
+    }
+    // available
+    this._desiredUpdateVersion = latestVersion;
+    banner.innerHTML = `
+      <p class="device-update-banner__text">
+        Update available: ${escapeHtml(currentVersion)} → ${escapeHtml(latestVersion)}
+      </p>
+      <div class="device-update-banner__actions">
+        <button type="button" data-action="start-device-update" data-device-id="${id}">Update</button>
+      </div>
+    `;
+    this._stopUpdatePoll();
+  }
+
+  _startUpdatePoll() {
+    if (this._updatePollTimer || !this._device) {
+      return;
+    }
+    const id = this._device.id;
+    this._updatePollTimer = window.setInterval(async () => {
+      const status = await window.dashboardApi.getJson(`/api/devices/${id}/device/update`);
+      if (status.error) {
+        return;
+      }
+      if (status.status === 'IN_PROGRESS') {
+        const banner = this._elements.updateBanner;
+        if (banner && !banner.hidden) {
+          const err = status.updateError
+            ? `<span class="device-update-banner__error">${escapeHtml(status.updateError)}</span>`
+            : '';
+          banner.innerHTML = `
+            <p class="device-update-banner__text">Updating TinyPilot… ${err}</p>
+          `;
+        }
+        return;
+      }
+      this._stopUpdatePoll();
+      await this.refreshSnapshot();
+    }, UPDATE_POLL_INTERVAL_MS);
+  }
+
+  async startUpdate() {
+    if (!this._device || !this._desiredUpdateVersion) {
+      return;
+    }
+    const id = this._device.id;
+    const banner = this._elements.updateBanner;
+    if (banner) {
+      banner.hidden = false;
+      banner.innerHTML = `<p class="device-update-banner__text">Starting update…</p>`;
+    }
+    const result = await window.dashboardApi.putJson(`/api/devices/${id}/device/update`, {
+      version: this._desiredUpdateVersion,
+    });
+    if (result.error) {
+      if (banner) {
+        banner.innerHTML = `
+          <p class="device-update-banner__text device-update-banner__error">
+            ${escapeHtml(result.error)}
+          </p>
+        `;
+      }
+      return;
+    }
+    this._startUpdatePoll();
   }
 
 }

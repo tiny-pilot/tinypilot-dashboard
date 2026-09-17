@@ -1,7 +1,8 @@
 """HTTP client for TinyPilot devices (Pro 3.2.0+ Automation API key).
 
 Uses a Bearer API key for allowlisted routes (screenshot, version, network,
-video settings, ``/state``) plus a warmup GET for cookie affinity.
+video settings, ``/state``, latestRelease, update) plus a warmup GET for
+cookie affinity.
 
 TLS note: TinyPilot devices typically present a self-signed certificate, so
 this client sets ``session.verify = False`` and silences the corresponding
@@ -69,6 +70,18 @@ class TinyPilotClient:
         self._raise_for_status(response)
         return response.json()
 
+    def _put_json(self, path: str, body: Optional[dict] = None) -> dict[str, Any]:
+        warmup = self.session.get(self.base_url, timeout=10)
+        warmup.raise_for_status()
+        response = self.session.put(
+            f'{self.base_url}{path}',
+            json=body,
+            headers=self._bearer_headers(),
+            timeout=30,
+        )
+        self._raise_for_status(response)
+        return response.json() if response.content else {}
+
     def get_network_status(self):
         return self._get_json('/api/network/status', bearer=True)
 
@@ -80,6 +93,15 @@ class TinyPilotClient:
 
     def get_video_settings(self) -> dict[str, Any]:
         return self._get_json('/api/settings/video', bearer=True)
+
+    def get_latest_release(self) -> dict[str, Any]:
+        return self._get_json('/api/latestRelease', bearer=True)
+
+    def get_update_status(self) -> dict[str, Any]:
+        return self._get_json('/api/update', bearer=True)
+
+    def start_update(self, version: str) -> dict[str, Any]:
+        return self._put_json('/api/update', {'version': version})
 
     def get_screenshot(self) -> bytes:
         response = self.session.get(

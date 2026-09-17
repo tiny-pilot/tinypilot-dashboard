@@ -182,6 +182,16 @@ def test_device_snapshot_endpoint_returns_collapsed_and_expanded_sections(client
         }
         tp_client.get_video_settings.return_value = {'h264Bitrate': 8000, 'streamingMode': 'MJPEG'}
         tp_client.get_automation_state.return_value = {}
+        tp_client.get_latest_release.return_value = {
+            'version': '2.6.5',
+            'kind': 'automatic',
+            'data': None,
+            'licenseCheckStatus': 'VALID',
+        }
+        tp_client.get_update_status.return_value = {
+            'status': 'NOT_RUNNING',
+            'updateError': None,
+        }
 
         snapshot_response = client.get(f'/api/devices/{device_id}/device/snapshot')
 
@@ -193,6 +203,8 @@ def test_device_snapshot_endpoint_returns_collapsed_and_expanded_sections(client
     assert 'connected_device_resolution' not in payload['collapsed']
     assert payload['expanded']['network']['data']['interfaces'][0]['ipAddress'] == '192.168.1.44'
     assert payload['expanded']['connected_device_resolution'] == '1920x1080'
+    assert payload['expanded']['software_update']['update_available'] is False
+    assert payload['expanded']['software_update']['can_start'] is False
     client_cls.assert_called_once()
     _args, kwargs = client_cls.call_args
     assert kwargs.get('api_key') == 'test-api-key'
@@ -216,12 +228,24 @@ def test_device_snapshot_prefers_automation_state_resolution(client):
         tp_client.get_automation_state.return_value = {
             'result': {'source': {'resolution': {'width': 2560, 'height': 1440}}},
         }
+        tp_client.get_latest_release.return_value = {
+            'version': '3.1.0',
+            'kind': 'automatic',
+            'data': None,
+            'licenseCheckStatus': 'VALID',
+        }
+        tp_client.get_update_status.return_value = {
+            'status': 'NOT_RUNNING',
+            'updateError': None,
+        }
 
         snapshot_response = client.get(f'/api/devices/{device_id}/device/snapshot')
 
     assert snapshot_response.status_code == 200
     assert 'connected_device_resolution' not in snapshot_response.json['collapsed']
     assert snapshot_response.json['expanded']['connected_device_resolution'] == '2560x1440'
+    assert snapshot_response.json['expanded']['software_update']['update_available'] is True
+    assert snapshot_response.json['expanded']['software_update']['can_start'] is True
     tp_client.get_automation_state.assert_called_once_with()
 
 
@@ -273,3 +297,90 @@ def test_refresh_screenshot_surfaces_api_errors(client):
 
     assert response.status_code == 502
     assert 'failed to refresh screenshot' in response.json['error']
+
+
+def test_device_snapshot_license_blocked_update_cannot_start(client):
+    create_payload = {
+        'friendly_name': 'Voyager 2 Unlicensed',
+        'base_url': 'https://192.168.1.90',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+
+    with patch('app.api.TinyPilotClient') as client_cls:
+        tp_client = client_cls.return_value
+        tp_client.get_status.return_value = {'ok': True}
+        tp_client.get_version.return_value = {'version': '3.0.0'}
+        tp_client.get_network_status.return_value = {'interfaces': []}
+        tp_client.get_video_settings.return_value = {}
+        tp_client.get_automation_state.return_value = {}
+        tp_client.get_latest_release.return_value = {
+            'version': '3.2.0',
+            'kind': 'automatic',
+            'data': None,
+            'licenseCheckStatus': 'UNLICENSED',
+        }
+        tp_client.get_update_status.return_value = {
+            'status': 'NOT_RUNNING',
+            'updateError': None,
+        }
+        response = client.get(f'/api/devices/{device_id}/device/snapshot')
+
+    assert response.status_code == 200
+    update = response.json['expanded']['software_update']
+    assert update['update_available'] is True
+    assert update['can_start'] is False
+
+
+def test_start_device_update_endpoint(client):
+    create_payload = {
+        'friendly_name': 'Update Target',
+        'base_url': 'https://192.168.1.91',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+
+    with patch('app.api.TinyPilotClient') as client_cls:
+        client_cls.return_value.start_update.return_value = {}
+        response = client.put(
+            f'/api/devices/{device_id}/device/update',
+            json={'version': '3.2.0'},
+        )
+
+    assert response.status_code == 200
+    assert response.json['update_started'] is True
+    client_cls.return_value.start_update.assert_called_once_with('3.2.0')
+
+
+def test_start_device_update_requires_version(client):
+    create_payload = {
+        'friendly_name': 'Update Target',
+        'base_url': 'https://192.168.1.92',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+    response = client.put(f'/api/devices/{device_id}/device/update', json={})
+    assert response.status_code == 400
+
+
+def test_get_device_update_status_endpoint(client):
+    create_payload = {
+        'friendly_name': 'Status Target',
+        'base_url': 'https://192.168.1.93',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+
+    with patch('app.api.TinyPilotClient') as client_cls:
+        client_cls.return_value.get_update_status.return_value = {
+            'status': 'IN_PROGRESS',
+            'updateError': None,
+        }
+        response = client.get(f'/api/devices/{device_id}/device/update')
+
+    assert response.status_code == 200
+    assert response.json['status'] == 'IN_PROGRESS'
