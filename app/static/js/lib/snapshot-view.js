@@ -121,11 +121,12 @@ function firstDefinedNumber(values) {
   return null;
 }
 
-// TinyPilot exposes different tuning knobs per streaming mode:
-//   * H.264  -> bitrate (kbps) and frame rate (fps)
-//   * MJPEG  -> quality (0-100) and frame rate (fps)
-// Pick the right rows so the expanded panel reflects what the device is
-// actually running.
+// TinyPilot exposes different tuning knobs per streaming mode (same as the
+ // device Web UI video settings dialog):
+ //   * H.264  -> bitrate (kbps) and high-performance mode (not MJPEG fps)
+ //   * MJPEG  -> frame rate (fps) and quality (0-100)
+ // Do not surface the other mode's dormant settings — e.g. mjpegFrameRate
+ // stays populated while streaming H.264 and is not the active frame rate.
 function formatVideoTuning(videoSettings, statusSettings) {
   const video = videoSettings && typeof videoSettings === 'object' ? videoSettings : {};
   const status = statusSettings && typeof statusSettings === 'object' ? statusSettings : {};
@@ -141,20 +142,12 @@ function formatVideoTuning(videoSettings, statusSettings) {
     lines.push(snapshotRow('Streaming mode', modeLabel));
   }
 
-  const frameRate = firstDefinedNumber([
-    video.mjpegFrameRate,
-    video.mjpeg_frame_rate,
-    video.h264FrameRate,
-    video.h264_frame_rate,
-    video.frameRate,
-    video.framesPerSecond,
-    status.mjpegFrameRate,
-    status.h264FrameRate,
-    status.frameRate,
-    status.framesPerSecond,
-  ]);
-
   if (modeLabel === 'MJPEG') {
+    const frameRate = firstDefinedNumber([
+      video.mjpegFrameRate,
+      video.mjpeg_frame_rate,
+      status.mjpegFrameRate,
+    ]);
     const quality = firstDefinedNumber([
       video.mjpegQuality,
       video.mjpeg_quality,
@@ -171,7 +164,7 @@ function formatVideoTuning(videoSettings, statusSettings) {
     return lines;
   }
 
-  // Default to H.264-style rows when the mode is H.264 or unknown.
+  // H.264 (canonical) — also used when mode is missing but bitrate is present.
   const bitrate = firstDefinedNumber([
     video.h264Bitrate,
     video.h264_bitrate,
@@ -182,8 +175,18 @@ function formatVideoTuning(videoSettings, statusSettings) {
   if (bitrate !== null) {
     lines.push(snapshotRow('Bitrate', `${bitrate} kbps`));
   }
-  if (frameRate !== null) {
-    lines.push(snapshotRow('Frame rate', `${frameRate} fps`));
+
+  let highPerformance = video.h264HighPerformance;
+  if (highPerformance === undefined) {
+    highPerformance = video.h264_high_performance;
+  }
+  if (highPerformance === undefined) {
+    highPerformance = status.h264HighPerformance;
+  }
+  if (typeof highPerformance === 'boolean') {
+    lines.push(
+      snapshotRow('High-performance mode', highPerformance ? 'On' : 'Off'),
+    );
   }
   return lines;
 }
