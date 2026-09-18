@@ -50,3 +50,41 @@ def test_get_screenshot_uses_bearer_and_returns_bytes(client):
     _args, kwargs = mock_session.get.call_args
     assert kwargs['headers']['Authorization'] == 'Bearer test-key'
     assert _args[0].endswith('/api/v1/screenshot')
+
+
+def test_get_latest_release_uses_bearer(client):
+    warmup = make_response()
+    api_response = make_response(
+        {
+            'version': '3.2.0',
+            'kind': 'automatic',
+            'data': None,
+            'licenseCheckStatus': 'VALID',
+        }
+    )
+    mock_session = MagicMock()
+    mock_session.get.side_effect = [warmup, api_response]
+    client.session = mock_session
+
+    result = client.get_latest_release()
+
+    assert result['version'] == '3.2.0'
+    _args, kwargs = mock_session.get.call_args_list[1]
+    assert kwargs['headers']['Authorization'] == 'Bearer test-key'
+    assert _args[0].endswith('/api/latestRelease')
+
+
+def test_start_update_puts_version_with_bearer(client):
+    warmup = make_response()
+    put_response = make_response(content=b'')
+    mock_session = MagicMock()
+    mock_session.get.return_value = warmup
+    mock_session.put.return_value = put_response
+    client.session = mock_session
+
+    client.start_update('3.2.0')
+
+    _args, kwargs = mock_session.put.call_args
+    assert _args[0].endswith('/api/update')
+    assert kwargs['json'] == {'version': '3.2.0'}
+    assert kwargs['headers']['Authorization'] == 'Bearer test-key'

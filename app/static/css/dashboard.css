@@ -711,3 +711,29 @@ button:active {
     padding: 0 1rem;
   }
 }
+
+.device-update-banner {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.device-update-banner__text {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.device-update-banner__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}
+
+.device-update-banner__error {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-danger, #b42318);
+}

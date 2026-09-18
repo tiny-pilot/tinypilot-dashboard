@@ -264,6 +264,10 @@ class DashboardApp extends HTMLElement {
     }
     if (action === 'fetch-device-snapshot') {
       await card.refreshSnapshot();
+      return;
+    }
+    if (action === 'start-device-update') {
+      await card.startUpdate();
     }
   }
 

@@ -23,6 +23,8 @@ from flask import send_file
 from app.auth_store import encrypt_secret
 from app.auth_store import decrypt_secret
 from app.db import get_db
+from app.device_update import can_start_update
+from app.device_update import update_available
 from app.resolution import connected_resolution_from_web_ui
 from app.resolution import resolution_from_automation_state
 from app.snapshot_service import write_latest_screenshot
@@ -357,13 +359,15 @@ def get_device_snapshot(device_id: int):
 
     client = TinyPilotClient(row['base_url'], api_key=api_key)
 
-    # API-key allowlist (Pro 3.2.0+): version, network, video, /state, screenshot.
-    # Skip Web UI session/CSRF-only routes (auth, requiresHttps, virtual media).
+    # API-key allowlist (Pro 3.2.0+): version, network, video, /state, screenshot,
+    # latestRelease, update status/start.
     status, status_error = _safe_fetch(client.get_status)
     version, version_error = _safe_fetch(client.get_version)
     network, network_error = _safe_fetch(client.get_network_status)
     video, video_error = _safe_fetch(client.get_video_settings)
     automation_state, automation_state_error = _safe_fetch(client.get_automation_state)
+    latest_release, latest_release_error = _safe_fetch(client.get_latest_release)
+    update_job, update_job_error = _safe_fetch(client.get_update_status)
 
     last_error = (
         status_error
@@ -389,11 +393,15 @@ def get_device_snapshot(device_id: int):
         or connected_resolution_from_web_ui(video, status)
     )
 
+    current_version = (version or {}).get('version')
+    latest_version = (latest_release or {}).get('version')
+    license_check_status = (latest_release or {}).get('licenseCheckStatus')
+
     collapsed = {
         'friendly_name': row['friendly_name'],
         'device_url': row['base_url'],
         'online': online,
-        'software_version': (version or {}).get('version', 'unknown'),
+        'software_version': current_version or 'unknown',
         'last_checked': datetime.now(timezone.utc).isoformat(),
         'api_key_status': 'configured',
     }
@@ -406,6 +414,16 @@ def get_device_snapshot(device_id: int):
         'automation_state': {'status': automation_state, 'error': automation_state_error},
         'connected_device_resolution': connected_resolution,
         'last_management_error': last_error,
+        'software_update': {
+            'latest': latest_release,
+            'latest_error': latest_release_error,
+            'job': update_job,
+            'job_error': update_job_error,
+            'update_available': update_available(current_version, latest_version),
+            'can_start': can_start_update(
+                current_version, latest_version, license_check_status
+            ),
+        },
     }
 
     return jsonify(
@@ -416,3 +434,31 @@ def get_device_snapshot(device_id: int):
             'expanded': expanded,
         }
     )
+
+
+@api_blueprint.get('/devices/<int:device_id>/device/update')
+def get_device_update_status(device_id: int):
+    client, err = _client_with_api_key(device_id)
+    if err is not None:
+        return err
+    try:
+        result = client.get_update_status()
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return jsonify({'error': f'failed to fetch update status: {exc}'}), 502
+    return jsonify(result)
+
+
+@api_blueprint.put('/devices/<int:device_id>/device/update')
+def start_device_update(device_id: int):
+    client, err = _client_with_api_key(device_id)
+    if err is not None:
+        return err
+    payload = request.get_json(silent=True) or {}
+    version = (payload.get('version') or '').strip()
+    if not version:
+        return jsonify({'error': 'version is required'}), 400
+    try:
+        client.start_update(version)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return jsonify({'error': f'failed to start update: {exc}'}), 502
+    return jsonify({'device_id': device_id, 'update_started': True, 'version': version})
