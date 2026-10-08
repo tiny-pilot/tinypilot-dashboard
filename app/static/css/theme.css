@@ -12,6 +12,7 @@ body {
   --color-muted: #475569;
   --color-accent: #0e6b86;
   --color-accent-hover: #0b5a71;
+  --color-danger: hsl(5, 57%, 44%);
   --color-nav: hsl(230, 33%, 33%);
   --color-nav-text: #ffffff;
   --space-1: 4px;
@@ -30,6 +31,7 @@ body {
   --color-muted: hsl(220, 18%, 76%);
   --color-accent: hsl(205, 65%, 52%);
   --color-accent-hover: hsl(205, 72%, 60%);
+  --color-danger: hsl(5, 57%, 58%);
   --color-nav: hsl(230, 33%, 30%);
   --color-nav-text: #ffffff;
 }

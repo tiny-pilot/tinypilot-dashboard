@@ -32,6 +32,17 @@ function deactivateScreenshotLink(link) {
   link.setAttribute('aria-disabled', 'true');
 }
 
+function renderHeaderOpenWebUi(device) {
+  const url = String(device.base_url || '').trim();
+  if (!url) {
+    return '';
+  }
+  return (
+    `<a class="header-open-webui" href="${escapeHtml(url)}" ` +
+    `target="_blank" rel="noopener noreferrer">Open WebUI</a>`
+  );
+}
+
 class DeviceCard extends HTMLElement {
   constructor() {
     super();
@@ -86,6 +97,7 @@ class DeviceCard extends HTMLElement {
       <section class="panel device-card">
         <header class="device-card-header">
           <h3 class="device-card-title">${escapeHtml(device.friendly_name)}</h3>
+          ${renderHeaderOpenWebUi(device)}
         </header>
         <section class="device-section connected-system">
           <div class="connected-system-header">
@@ -133,12 +145,9 @@ class DeviceCard extends HTMLElement {
         </section>
         <section class="device-section tiny-device">
           <h3>TinyPilot device</h3>
-          <p>
-            <a class="launch-link" href="${escapeHtml(device.base_url)}" target="_blank" rel="noopener noreferrer">Launch WebUI ↗</a>
-          </p>
           <div class="actions">
             <button type="button" data-action="fetch-device-snapshot" data-device-id="${id}">Refresh device snapshot</button>
-            <button type="button" data-action="delete-device" data-device-id="${id}">Delete device</button>
+            <button type="button" data-action="delete-device" data-device-id="${id}">Remove device</button>
           </div>
           <div id="device-collapsed-summary-${id}" class="metrics-output">
             Retrieving device snapshot...

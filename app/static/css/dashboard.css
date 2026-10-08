@@ -99,12 +99,77 @@ summary {
 }
 
 .device-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   margin: calc(-1 * var(--space-4));
   margin-bottom: var(--space-3);
   padding: var(--space-3) var(--space-4);
   background: var(--color-nav);
   color: var(--color-nav-text);
   border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.device-card-header .device-card-title {
+  min-width: 0;
+}
+
+.header-open-webui {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0.4rem 1rem;
+  background: #fff;
+  color: var(--color-nav);
+  border: 1px solid #fff;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.header-open-webui:hover,
+.header-open-webui:focus-visible {
+  background: color-mix(in srgb, #fff 86%, var(--color-nav));
+  border-color: color-mix(in srgb, #fff 86%, var(--color-nav));
+  color: var(--color-nav);
+  text-decoration: none;
+}
+
+button.button-danger-quiet {
+  background: transparent;
+  color: var(--color-danger);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 55%, transparent);
+  font-weight: 500;
+}
+
+button.button-danger-quiet:hover {
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.delete-device-actions {
+  margin-top: var(--space-2);
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.delete-device-actions button {
+  margin-top: 0;
+  min-width: 0;
+  min-height: 2rem;
+  height: 2rem;
+  padding: 0 1rem;
+  line-height: 1;
+}
+
+.delete-device-actions #delete-device-cancel {
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid color-mix(in srgb, var(--color-text) 28%, transparent);
 }
 
 .device-section > h3,
@@ -646,14 +711,22 @@ button:active {
 
 .modal-close {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 1.75rem;
+  height: 1.75rem;
   margin: 0;
-  padding: 0.15rem 0.45rem;
+  padding: 0;
   line-height: 1;
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   font-weight: 500;
   background: transparent;
   border: 1px solid color-mix(in srgb, var(--color-text) 25%, transparent);
   color: var(--color-muted);
+  /* × sits high in the em box; nudge for optical center. */
+  transform: translateY(1px);
 }
 
 .modal-close:hover {
