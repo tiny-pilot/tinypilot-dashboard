@@ -1,0 +1,54 @@
+version: 2.1
+
+# CircleCI for TinyPilot Dashboard. Keep this slimmer than Cloud/Pro: Flask
+# tests plus ShellCheck on deploy scripts.
+
+executors:
+  ubuntu:
+    docker:
+      - image: cimg/base:2024.02
+  python:
+    docker:
+      - image: cimg/python:3.12
+
+jobs:
+  check_python:
+    executor: python
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            python3 -m venv venv
+            . venv/bin/activate
+            pip install --upgrade pip
+            pip install --requirement requirements.txt
+      - run:
+          name: Run tests
+          command: |
+            . venv/bin/activate
+            python -m pytest -q
+
+  check_bash:
+    executor: ubuntu
+    steps:
+      - checkout
+      - run:
+          name: Install ShellCheck
+          command: |
+            set -eux
+            readonly SHELLCHECK_VERSION='v0.9.0'
+            wget --quiet --output-document - \
+              "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" |
+              tar --extract --xz --verbose
+            sudo cp "./shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/bin
+            shellcheck --version
+      - run:
+          name: Run ShellCheck
+          command: shellcheck deploy/cloud-init.sh
+
+workflows:
+  test:
+    jobs:
+      - check_python
+      - check_bash

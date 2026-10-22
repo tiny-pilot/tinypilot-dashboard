@@ -98,6 +98,10 @@ class DeviceCard extends HTMLElement {
     return this._device;
   }
 
+  get desiredUpdateVersion() {
+    return this._desiredUpdateVersion;
+  }
+
   connectedCallback() {
     if (this._device) {
       this._render();

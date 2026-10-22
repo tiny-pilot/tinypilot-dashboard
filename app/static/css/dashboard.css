@@ -78,7 +78,7 @@
   padding: var(--space-4);
   margin-bottom: var(--space-4);
   border: 1px solid color-mix(in srgb, var(--color-text) 12%, transparent);
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
 }
 
 h1,
@@ -151,13 +151,15 @@ button.button-danger-quiet:hover {
   border-color: var(--color-danger);
 }
 
-.delete-device-actions {
+.delete-device-actions,
+.update-device-actions {
   margin-top: var(--space-2);
   align-items: center;
   gap: var(--space-2);
 }
 
-.delete-device-actions button {
+.delete-device-actions button,
+.update-device-actions button {
   margin-top: 0;
   min-width: 0;
   min-height: 2rem;
@@ -166,7 +168,8 @@ button.button-danger-quiet:hover {
   line-height: 1;
 }
 
-.delete-device-actions #delete-device-cancel {
+.delete-device-actions #delete-device-cancel,
+.update-device-actions #update-device-cancel {
   background: transparent;
   color: var(--color-text);
   border: 1px solid color-mix(in srgb, var(--color-text) 28%, transparent);
@@ -189,7 +192,7 @@ button.button-danger-quiet:hover {
   border-radius: var(--radius-md);
   padding: var(--space-3);
   margin-bottom: var(--space-3);
-  background: color-mix(in srgb, var(--color-panel) 94%, var(--color-text) 6%);
+  background: hsl(224, 22%, 17%);
 }
 
 .device-section h3 {
@@ -399,7 +402,7 @@ input {
   margin-top: var(--space-3);
   padding: var(--space-3);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-panel) 96%, var(--color-text) 4%);
+  background: hsl(224, 20%, 16%);
   border: 1px solid color-mix(in srgb, var(--color-text) 14%, transparent);
   color: var(--color-text);
   white-space: normal;
@@ -742,13 +745,13 @@ a.theme-toggle:visited {
   border: 0;
   padding: 0;
   margin: 0;
-  background: rgba(15, 23, 42, 0.55);
+  background: rgba(0, 0, 0, 0.65);
   cursor: pointer;
 }
 
 .modal-backdrop:hover,
 .modal-backdrop:active {
-  background: rgba(15, 23, 42, 0.55);
+  background: rgba(0, 0, 0, 0.65);
   transform: none;
 }
 
@@ -798,49 +801,6 @@ a.theme-toggle:visited {
 .modal-close:hover {
   background: color-mix(in srgb, var(--color-text) 8%, transparent);
   color: var(--color-text);
-}
-
-:root[data-theme="dark"] .modal-backdrop {
-  background: rgba(0, 0, 0, 0.65);
-}
-
-:root[data-theme="dark"] .modal-backdrop:hover,
-:root[data-theme="dark"] .modal-backdrop:active {
-  background: rgba(0, 0, 0, 0.65);
-}
-
-:root[data-theme="dark"] .modal-close {
-  border-color: rgba(255, 255, 255, 0.25);
-  color: hsl(220, 18%, 82%);
-}
-
-:root[data-theme="dark"] .modal-close:hover {
-  color: hsl(220, 35%, 94%);
-}
-
-:root[data-theme="dark"] .panel {
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
-}
-
-:root[data-theme="dark"] .device-section {
-  background: hsl(224, 22%, 17%);
-}
-
-:root[data-theme="dark"] .metrics-output {
-  background: hsl(224, 20%, 16%);
-}
-
-:root[data-theme="dark"] .snapshot-section {
-  border-top-color: rgba(255, 255, 255, 0.12);
-}
-
-:root[data-theme="dark"] .snapshot-iface + .snapshot-iface {
-  border-top-color: rgba(255, 255, 255, 0.1);
-}
-
-:root[data-theme="dark"] .snapshot-row > span:first-child,
-:root[data-theme="dark"] .status-meta {
-  color: hsl(220, 20%, 82%);
 }
 
 @media (max-width: 980px) {

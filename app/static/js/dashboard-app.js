@@ -5,6 +5,7 @@ const ADD_DEVICE_TOGGLE_LABEL = 'Add a device';
 const ADD_DEVICE_MODAL_LABEL = 'Add a TinyPilot device';
 const ADD_DEVICE_SUBMIT_LABEL = 'Add device';
 const DELETE_DEVICE_MODAL_LABEL = 'Remove device';
+const UPDATE_DEVICE_MODAL_LABEL = 'Update TinyPilot';
 const DEVICES_PER_PAGE = 4;
 const CONNECTED_STATUS_REFRESH_INTERVAL_MS = 30_000;
 
@@ -15,6 +16,7 @@ class DashboardApp extends HTMLElement {
     this._allDevices = [];
     this._currentPage = 1;
     this._pendingDeleteDeviceId = null;
+    this._pendingUpdateCard = null;
     this._screenshotAutoRefreshTimers = new Map();
     this._screenshotCapturedAtByDevice = new Map();
   }
@@ -84,6 +86,20 @@ class DashboardApp extends HTMLElement {
           <p id="delete-device-status" class="subtitle"></p>
         </section>
       </div>
+      <div id="update-device-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="update-device-heading">
+        <button type="button" class="modal-backdrop" id="update-device-modal-backdrop" tabindex="-1" aria-label="Close dialog"></button>
+        <section class="modal-panel panel">
+          <header class="modal-header">
+            <h2 id="update-device-heading">${UPDATE_DEVICE_MODAL_LABEL}</h2>
+            <button type="button" class="modal-close" id="update-device-modal-close" aria-label="Close">&times;</button>
+          </header>
+          <p class="subtitle">Install TinyPilot <strong id="update-device-version"></strong> on this device? The device will restart during the update.</p>
+          <div class="actions update-device-actions">
+            <button type="button" id="update-device-cancel">Cancel</button>
+            <button type="button" id="update-device-confirm">Update</button>
+          </div>
+        </section>
+      </div>
     `;
 
     this._elements = {
@@ -102,6 +118,12 @@ class DashboardApp extends HTMLElement {
       deleteDeviceForm: this.shadowRoot.getElementById('delete-device-form'),
       deleteDeviceCancel: this.shadowRoot.getElementById('delete-device-cancel'),
       deleteDeviceStatus: this.shadowRoot.getElementById('delete-device-status'),
+      updateDeviceModal: this.shadowRoot.getElementById('update-device-modal'),
+      updateDeviceModalClose: this.shadowRoot.getElementById('update-device-modal-close'),
+      updateDeviceModalBackdrop: this.shadowRoot.getElementById('update-device-modal-backdrop'),
+      updateDeviceCancel: this.shadowRoot.getElementById('update-device-cancel'),
+      updateDeviceConfirm: this.shadowRoot.getElementById('update-device-confirm'),
+      updateDeviceVersion: this.shadowRoot.getElementById('update-device-version'),
     };
 
     this._bind();
@@ -124,9 +146,20 @@ class DashboardApp extends HTMLElement {
     e.deleteDeviceModalClose.addEventListener('click', () => this._closeDeleteDeviceModal());
     e.deleteDeviceModalBackdrop.addEventListener('click', () => this._closeDeleteDeviceModal());
     e.deleteDeviceCancel.addEventListener('click', () => this._closeDeleteDeviceModal());
+    e.updateDeviceModalClose.addEventListener('click', () => this._closeUpdateDeviceModal());
+    e.updateDeviceModalBackdrop.addEventListener('click', () => this._closeUpdateDeviceModal());
+    e.updateDeviceCancel.addEventListener('click', () => this._closeUpdateDeviceModal());
+    e.updateDeviceConfirm.addEventListener('click', () => {
+      void this._confirmUpdateDevice();
+    });
 
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') {
+        return;
+      }
+      if (e.updateDeviceModal && !e.updateDeviceModal.hasAttribute('hidden')) {
+        this._closeUpdateDeviceModal();
+        event.preventDefault();
         return;
       }
       if (e.deleteDeviceModal && !e.deleteDeviceModal.hasAttribute('hidden')) {
@@ -214,6 +247,41 @@ class DashboardApp extends HTMLElement {
       this._elements.deleteDeviceStatus.textContent = '';
     }
     document.body.style.overflow = '';
+  }
+
+  _openUpdateDeviceModal(card) {
+    const version = card?.desiredUpdateVersion;
+    if (!version) {
+      return;
+    }
+    const e = this._elements;
+    this._pendingUpdateCard = card;
+    if (e.updateDeviceVersion) {
+      e.updateDeviceVersion.textContent = version;
+    }
+    e.updateDeviceModal.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+    window.requestAnimationFrame(() => {
+      e.updateDeviceConfirm?.focus();
+    });
+  }
+
+  _closeUpdateDeviceModal() {
+    const { updateDeviceModal } = this._elements;
+    if (!updateDeviceModal || updateDeviceModal.hasAttribute('hidden')) {
+      return;
+    }
+    updateDeviceModal.setAttribute('hidden', '');
+    this._pendingUpdateCard = null;
+    document.body.style.overflow = '';
+  }
+
+  async _confirmUpdateDevice() {
+    const card = this._pendingUpdateCard;
+    this._closeUpdateDeviceModal();
+    if (card) {
+      await card.startUpdate();
+    }
   }
 
   _bindAddDeviceForm() {
@@ -340,7 +408,7 @@ class DashboardApp extends HTMLElement {
       return;
     }
     if (action === 'start-device-update') {
-      await card.startUpdate();
+      this._openUpdateDeviceModal(card);
     }
   }
 

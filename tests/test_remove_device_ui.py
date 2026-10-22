@@ -8,6 +8,19 @@ CARD = ROOT / 'app/static/js/components/device-card.js'
 THEME = ROOT / 'app/static/css/theme.css'
 
 
+def test_update_device_uses_in_page_confirm_modal():
+    source = APP.read_text(encoding='utf-8')
+    assert 'update-device-modal' in source
+    assert '_openUpdateDeviceModal' in source
+    assert '_confirmUpdateDevice' in source
+    assert "action === 'start-device-update'" in source
+    start = source.split("action === 'start-device-update'", 1)[1]
+    start = start.split('}', 1)[0]
+    assert 'startUpdate()' not in start
+    assert '_openUpdateDeviceModal(card)' in start
+    assert 'window.confirm(' not in source
+
+
 def test_remove_device_uses_in_page_modal():
     source = APP.read_text(encoding='utf-8')
     assert '_openDeleteDeviceModal' in source
@@ -44,7 +57,12 @@ def test_dashboard_is_dark_only_without_theme_toggle():
     assert '_initThemeToggle' not in app
     assert 'data-theme="dark"' in index
     css = (ROOT / 'app/static/css/dashboard.css').read_text(encoding='utf-8')
+    theme = THEME.read_text(encoding='utf-8')
     assert '.subtitle.connected-status--caution' in css
+    assert ':root[data-theme="dark"]' not in css
+    assert ':root[data-theme="dark"]' not in theme
+    assert 'color-scheme: dark' in theme
+    assert 'hsl(35, 60%, 97%)' not in theme
 
 
 def test_device_card_keeps_cached_preview_copy():
@@ -120,6 +138,12 @@ def test_dashboard_buttons_match_cloud_navy():
     assert 'linear-gradient(0deg' not in css
     assert 'button.button-danger-quiet' in css
     assert 'hsl(230, 16%, 55%)' not in css
+
+
+def test_circleci_runs_pytest_and_shellcheck():
+    config = (ROOT / '.circleci/config.yml').read_text(encoding='utf-8')
+    assert 'python -m pytest -q' in config
+    assert 'shellcheck deploy/cloud-init.sh' in config
 
 
 def test_screenshot_click_opens_device_webui():
