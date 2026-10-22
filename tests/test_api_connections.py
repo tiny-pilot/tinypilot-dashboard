@@ -1,20 +1,19 @@
 from unittest.mock import patch
 
 import requests
-
 from app import create_app
 from app.resolution import resolution_from_automation_state
 
 
 def test_schema_bootstrap_creates_tables(tmp_path):
-    db_path = tmp_path / "dashboard.sqlite"
-    app = create_app({"DATABASE_PATH": str(db_path)})
+    db_path = tmp_path / 'dashboard.sqlite'
+    app = create_app({'DATABASE_PATH': str(db_path)})
 
     with app.app_context():
         from app.db import list_tables
         tables = set(list_tables())
 
-    assert {"devices", "device_auth", "device_runtime_state"} <= tables
+    assert {'devices', 'device_auth', 'device_runtime_state'} <= tables
 
 
 def test_list_devices_endpoint(client):

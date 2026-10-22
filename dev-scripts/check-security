@@ -1,0 +1,18 @@
+#!/bin/bash
+#
+# Static Application Security Testing plus dependency audit.
+
+set -e
+set -x
+set -u
+
+semgrep scan --config p/python --config p/flask --text
+
+finding_count="$(semgrep scan --config p/python --config p/flask --json --quiet | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("results", [])))')"
+readonly finding_count
+if (( finding_count > 0 )); then
+  printf 'semgrep reported %s finding(s)\n' "${finding_count}" >&2
+  exit 1
+fi
+
+pip-audit --requirement requirements.txt

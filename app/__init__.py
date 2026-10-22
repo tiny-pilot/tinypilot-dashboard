@@ -7,7 +7,8 @@ from flask import render_template
 from flask import send_from_directory
 
 from app.api import api_blueprint
-from app.db import close_db, init_db
+from app.db import close_db
+from app.db import init_db
 
 # Public product version. Version bands signal lifecycle stage to customers:
 #   0.1.x / 0.2.x / 0.3.x  -> alpha

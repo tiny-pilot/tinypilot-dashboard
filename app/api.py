@@ -21,8 +21,8 @@ from flask import jsonify
 from flask import request
 from flask import send_file
 
-from app.auth_store import encrypt_secret
 from app.auth_store import decrypt_secret
+from app.auth_store import encrypt_secret
 from app.db import get_db
 from app.device_update import can_start_update
 from app.device_update import update_available

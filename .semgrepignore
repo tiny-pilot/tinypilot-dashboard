@@ -1,0 +1,9 @@
+# Generated / local
+node_modules/
+venv/
+.venv/
+.pytest_cache/
+data/
+
+# Tests use fixtures and static source greps, not production request paths.
+tests/

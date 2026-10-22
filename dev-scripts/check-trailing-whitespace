@@ -1,0 +1,19 @@
+#!/bin/bash
+#
+# Check for trailing whitespace
+
+set -e
+set -u
+
+while read -r line; do
+  if grep \
+    "\s$" \
+    --line-number \
+    --with-filename \
+    --binary-files=without-match \
+    --exclude="*third-party*" \
+    "${line}"; then
+    echo "Found trailing whitespace" >&2
+    exit 1
+  fi
+done < <(git ls-files)

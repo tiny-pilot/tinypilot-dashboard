@@ -1,0 +1,34 @@
+src = ["app", "tests"]
+target-version = "py312"
+
+[lint]
+select = [
+  "F", # pyflakes
+  "I", # isort
+  "Q", # flake8-quotes
+  "S", # flake8-bandit (security)
+]
+ignore = [
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D105",
+  "D106",
+  "D107",
+]
+
+[lint.flake8-quotes]
+avoid-escape = false
+docstring-quotes = "double"
+inline-quotes = "single"
+multiline-quotes = "double"
+
+[lint.isort]
+force-single-line = true
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S105", "S106"]
+"run.py" = ["S104"]
+"app/__init__.py" = ["S106"]

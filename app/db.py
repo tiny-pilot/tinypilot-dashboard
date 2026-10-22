@@ -9,7 +9,8 @@ checkout works without a separate migration step.
 import sqlite3
 from pathlib import Path
 
-from flask import current_app, g
+from flask import current_app
+from flask import g
 
 
 def get_db() -> sqlite3.Connection:
@@ -95,8 +96,8 @@ def _ensure_column(
     ``table``, ``column``, and ``column_def`` come from constants in this
     module, never from user input, so the f-string ``ALTER TABLE`` is safe.
     """
-    existing = db.execute(f"PRAGMA table_info({table})").fetchall()
+    existing = db.execute(f'PRAGMA table_info({table})').fetchall()
     existing_names = {row['name'] for row in existing}
     if column in existing_names:
         return
-    db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_def}")
+    db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {column_def}')

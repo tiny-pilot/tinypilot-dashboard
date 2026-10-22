@@ -1,7 +1,6 @@
 """Pytest configuration and shared fixtures for tests."""
 
 import pytest
-
 from app import create_app
 
 

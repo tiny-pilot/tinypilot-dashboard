@@ -1,0 +1,33 @@
+#!/bin/bash
+#
+# Run tests and static analysis on Python files.
+
+set -e
+set -x
+set -u
+
+find . \
+  -name '*.pyc' \
+  -type f \
+  -not -path './.venv/*' \
+  -not -path './venv/*' \
+  -delete
+
+./venv/bin/pytest -q
+
+INIT_FILES_OK=true
+while read -r directory; do
+  if [[ ! -f "${directory}/__init__.py" ]]; then
+    printf "Directory missing __init__.py file: %s\n" "${directory}" >&2
+    INIT_FILES_OK=false
+  fi
+done < <(
+  find app \
+    -type f \
+    -name '*.py' \
+    -exec dirname {} \; \
+    | sort --unique
+)
+"${INIT_FILES_OK}" || exit 1
+
+./venv/bin/ruff check app tests run.py

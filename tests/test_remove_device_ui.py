@@ -140,10 +140,19 @@ def test_dashboard_buttons_match_cloud_navy():
     assert 'hsl(230, 16%, 55%)' not in css
 
 
-def test_circleci_runs_pytest_and_shellcheck():
+def test_circleci_runs_core_and_security_jobs():
     config = (ROOT / '.circleci/config.yml').read_text(encoding='utf-8')
-    assert 'python -m pytest -q' in config
-    assert 'shellcheck deploy/cloud-init.sh' in config
+    for job in (
+        'check_whitespace',
+        'check_bash',
+        'check_python',
+        'check_javascript',
+        'check_security',
+    ):
+        assert job in config
+    assert './dev-scripts/check-python' in config
+    assert './dev-scripts/check-security' in config
+    assert './dev-scripts/check-javascript' in config
 
 
 def test_screenshot_click_opens_device_webui():
@@ -152,7 +161,7 @@ def test_screenshot_click_opens_device_webui():
     assert 'aria-label="Control ${escapeHtml(device.friendly_name)}"' in source
     assert 'href="/api/devices/${id}/latest-screenshot"' not in source
     assert 'latest-screenshot' in source
-    assert "device.base_url" in source
+    assert 'device.base_url' in source
     link = source.split('id="connected-screenshot-link-${id}"', 1)[1]
     link = link.split('>', 1)[0]
     assert 'target="_blank"' in link

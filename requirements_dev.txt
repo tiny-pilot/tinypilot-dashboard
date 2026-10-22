@@ -1,0 +1,3 @@
+# CI / local test tooling. Runtime deps stay in requirements.txt.
+pytest>=8.0,<10.0
+ruff==0.15.13

@@ -1,7 +1,8 @@
 version: 2.1
 
-# CircleCI for TinyPilot Dashboard. Keep this slimmer than Cloud/Pro: Flask
-# tests plus ShellCheck on deploy scripts.
+# CircleCI for TinyPilot Dashboard. Jobs mirror Cloud/Pro gates that apply
+# to this Flask app (tests, lint, ShellCheck, JS syntax, SAST, pip-audit).
+# Appliance-only jobs (Debian/Packer/HCL/device e2e) are omitted.
 
 executors:
   ubuntu:
@@ -10,24 +11,21 @@ executors:
   python:
     docker:
       - image: cimg/python:3.12
+  node:
+    docker:
+      - image: cimg/node:24.13.1
 
 jobs:
-  check_python:
-    executor: python
+  check_whitespace:
+    executor: ubuntu
     steps:
       - checkout
       - run:
-          name: Install dependencies
-          command: |
-            python3 -m venv venv
-            . venv/bin/activate
-            pip install --upgrade pip
-            pip install --requirement requirements.txt
+          name: Check for trailing whitespace
+          command: ./dev-scripts/check-trailing-whitespace
       - run:
-          name: Run tests
-          command: |
-            . venv/bin/activate
-            python -m pytest -q
+          name: Check that all text files end in a trailing newline
+          command: ./dev-scripts/check-trailing-newline
 
   check_bash:
     executor: ubuntu
@@ -45,10 +43,62 @@ jobs:
             shellcheck --version
       - run:
           name: Run ShellCheck
-          command: shellcheck deploy/cloud-init.sh
+          command: ./dev-scripts/check-bash
+
+  check_python:
+    executor: python
+    steps:
+      - checkout
+      - run:
+          name: Install Python requirements
+          command: |
+            python3 -m venv venv
+            . venv/bin/activate
+            pip install --upgrade pip
+            pip install \
+              --requirement requirements.txt \
+              --requirement requirements_dev.txt
+      - run:
+          name: Run check script
+          command: |
+            . venv/bin/activate
+            ./dev-scripts/check-python
+
+  check_javascript:
+    executor: node
+    steps:
+      - checkout
+      - run:
+          name: Syntax-check JavaScript
+          command: ./dev-scripts/check-javascript
+
+  check_security:
+    executor: python
+    steps:
+      - checkout
+      - run:
+          name: Create virtual environment
+          command: python3 -m venv venv
+      - run:
+          name: Install requirements
+          command: |
+            . venv/bin/activate
+            pip install --upgrade pip
+            pip install \
+              --requirement requirements.txt \
+              --requirement requirements_dev.txt
+            pip install 'semgrep==1.163.0' 'pip-audit>=2.7,<3.0'
+      - run:
+          name: Run Static Application Security Testing (SAST)
+          command: |
+            . venv/bin/activate
+            ./dev-scripts/check-security
 
 workflows:
   test:
     jobs:
-      - check_python
+      - check_whitespace
       - check_bash
+      - check_python
+      - check_javascript
+      - check_security
