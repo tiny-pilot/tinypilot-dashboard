@@ -5,6 +5,7 @@ This project depends on the following third-party Python packages. Each is distr
 ## Runtime dependencies
 
 - **Flask** — BSD-3-Clause — <https://github.com/pallets/flask>
+- **waitress** — ZPL-2.1 — <https://github.com/Pylons/waitress>
 - **requests** — Apache-2.0 — <https://github.com/psf/requests>
 - **urllib3** — MIT — <https://github.com/urllib3/urllib3>
 - **cryptography** — Apache-2.0 OR BSD-3-Clause — <https://github.com/pyca/cryptography>
