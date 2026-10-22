@@ -1,0 +1,27 @@
+#!/bin/bash
+#
+# Run static analysis on shell scripts.
+
+set -e
+set -x
+set -u
+
+SHELL_SCRIPTS=()
+while read -r filepath; do
+  if head -n 1 "${filepath}" | grep --quiet \
+    --regexp '#!/bin/bash' \
+    --regexp '#!/usr/bin/env bash' \
+    --regexp '#!/bin/sh' \
+    --regexp '#!/usr/bin/env sh'
+  then
+    SHELL_SCRIPTS+=("${filepath}")
+  fi
+done < <(git ls-files)
+readonly SHELL_SCRIPTS
+
+if (( "${#SHELL_SCRIPTS[@]}" == 0 )); then
+  echo 'No shell scripts found.'
+  exit 0
+fi
+
+shellcheck "${SHELL_SCRIPTS[@]}"

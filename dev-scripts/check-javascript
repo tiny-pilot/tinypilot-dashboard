@@ -1,0 +1,11 @@
+#!/bin/bash
+#
+# Syntax-check dashboard JavaScript (no bundler).
+
+set -e
+set -x
+set -u
+
+while read -r js; do
+  node --check "${js}"
+done < <(git ls-files '*.js')

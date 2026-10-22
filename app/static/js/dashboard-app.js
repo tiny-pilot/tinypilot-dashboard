@@ -4,6 +4,8 @@ import { formatRelativeTime } from './lib/strings.js';
 const ADD_DEVICE_TOGGLE_LABEL = 'Add a device';
 const ADD_DEVICE_MODAL_LABEL = 'Add a TinyPilot device';
 const ADD_DEVICE_SUBMIT_LABEL = 'Add device';
+const DELETE_DEVICE_MODAL_LABEL = 'Remove device';
+const UPDATE_DEVICE_MODAL_LABEL = 'Update TinyPilot';
 const DEVICES_PER_PAGE = 4;
 const CONNECTED_STATUS_REFRESH_INTERVAL_MS = 30_000;
 
@@ -13,6 +15,8 @@ class DashboardApp extends HTMLElement {
     this._elements = {};
     this._allDevices = [];
     this._currentPage = 1;
+    this._pendingDeleteDeviceId = null;
+    this._pendingUpdateCard = null;
     this._screenshotAutoRefreshTimers = new Map();
     this._screenshotCapturedAtByDevice = new Map();
   }
@@ -30,7 +34,6 @@ class DashboardApp extends HTMLElement {
         </div>
         <div class="topbar-actions">
           <button id="add-device-toggle" type="button" class="theme-toggle">${ADD_DEVICE_TOGGLE_LABEL}</button>
-          <button id="theme-toggle" type="button" class="theme-toggle">Dark mode</button>
         </div>
       </header>
       <main class="dashboard">
@@ -62,19 +65,65 @@ class DashboardApp extends HTMLElement {
           <p id="add-device-status" class="subtitle"></p>
         </section>
       </div>
+      <div id="delete-device-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="delete-device-heading">
+        <button type="button" class="modal-backdrop" id="delete-device-modal-backdrop" tabindex="-1" aria-label="Close dialog"></button>
+        <section class="modal-panel panel">
+          <header class="modal-header">
+            <h2 id="delete-device-heading">${DELETE_DEVICE_MODAL_LABEL}</h2>
+            <button type="button" class="modal-close" id="delete-device-modal-close" aria-label="Close">&times;</button>
+          </header>
+          <p class="subtitle">Type REMOVE to remove this device from your Dashboard.<br>You will need to add it again from the device.</p>
+          <form id="delete-device-form" class="form-grid">
+            <label>
+              Confirmation
+              <input name="confirm" required autocomplete="off" spellcheck="false" placeholder="REMOVE">
+            </label>
+            <div class="actions delete-device-actions">
+              <button type="button" id="delete-device-cancel">Cancel</button>
+              <button type="submit" class="button-danger-quiet">Remove device</button>
+            </div>
+          </form>
+          <p id="delete-device-status" class="subtitle"></p>
+        </section>
+      </div>
+      <div id="update-device-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="update-device-heading">
+        <button type="button" class="modal-backdrop" id="update-device-modal-backdrop" tabindex="-1" aria-label="Close dialog"></button>
+        <section class="modal-panel panel">
+          <header class="modal-header">
+            <h2 id="update-device-heading">${UPDATE_DEVICE_MODAL_LABEL}</h2>
+            <button type="button" class="modal-close" id="update-device-modal-close" aria-label="Close">&times;</button>
+          </header>
+          <p class="subtitle">Install TinyPilot <strong id="update-device-version"></strong> on this device? The device will restart during the update.</p>
+          <div class="actions update-device-actions">
+            <button type="button" id="update-device-cancel">Cancel</button>
+            <button type="button" id="update-device-confirm">Update</button>
+          </div>
+        </section>
+      </div>
     `;
 
     this._elements = {
       deviceSections: this.shadowRoot.getElementById('device-sections'),
       devicePagination: this.shadowRoot.getElementById('device-pagination'),
       addDeviceToggle: this.shadowRoot.getElementById('add-device-toggle'),
-      themeToggle: this.shadowRoot.getElementById('theme-toggle'),
       addDeviceModal: this.shadowRoot.getElementById('add-device-modal'),
       addDeviceHeading: this.shadowRoot.getElementById('add-device-heading'),
       addDeviceModalClose: this.shadowRoot.getElementById('add-device-modal-close'),
       addDeviceModalBackdrop: this.shadowRoot.getElementById('add-device-modal-backdrop'),
       addDeviceForm: this.shadowRoot.getElementById('add-device-form'),
       addDeviceStatus: this.shadowRoot.getElementById('add-device-status'),
+      deleteDeviceModal: this.shadowRoot.getElementById('delete-device-modal'),
+      deleteDeviceModalClose: this.shadowRoot.getElementById('delete-device-modal-close'),
+      deleteDeviceModalBackdrop: this.shadowRoot.getElementById('delete-device-modal-backdrop'),
+      deleteDeviceForm: this.shadowRoot.getElementById('delete-device-form'),
+      deleteDeviceCancel: this.shadowRoot.getElementById('delete-device-cancel'),
+      deleteDeviceStatus: this.shadowRoot.getElementById('delete-device-status'),
+      updateDeviceModal: this.shadowRoot.getElementById('update-device-modal'),
+      updateDeviceModalClose: this.shadowRoot.getElementById('update-device-modal-close'),
+      updateDeviceModalBackdrop: this.shadowRoot.getElementById('update-device-modal-backdrop'),
+      updateDeviceCancel: this.shadowRoot.getElementById('update-device-cancel'),
+      updateDeviceConfirm: this.shadowRoot.getElementById('update-device-confirm'),
+      updateDeviceVersion: this.shadowRoot.getElementById('update-device-version'),
     };
 
     this._bind();
@@ -94,9 +143,28 @@ class DashboardApp extends HTMLElement {
     });
     e.addDeviceModalClose.addEventListener('click', () => this._closeAddDeviceModal());
     e.addDeviceModalBackdrop.addEventListener('click', () => this._closeAddDeviceModal());
+    e.deleteDeviceModalClose.addEventListener('click', () => this._closeDeleteDeviceModal());
+    e.deleteDeviceModalBackdrop.addEventListener('click', () => this._closeDeleteDeviceModal());
+    e.deleteDeviceCancel.addEventListener('click', () => this._closeDeleteDeviceModal());
+    e.updateDeviceModalClose.addEventListener('click', () => this._closeUpdateDeviceModal());
+    e.updateDeviceModalBackdrop.addEventListener('click', () => this._closeUpdateDeviceModal());
+    e.updateDeviceCancel.addEventListener('click', () => this._closeUpdateDeviceModal());
+    e.updateDeviceConfirm.addEventListener('click', () => {
+      void this._confirmUpdateDevice();
+    });
 
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') {
+        return;
+      }
+      if (e.updateDeviceModal && !e.updateDeviceModal.hasAttribute('hidden')) {
+        this._closeUpdateDeviceModal();
+        event.preventDefault();
+        return;
+      }
+      if (e.deleteDeviceModal && !e.deleteDeviceModal.hasAttribute('hidden')) {
+        this._closeDeleteDeviceModal();
+        event.preventDefault();
         return;
       }
       if (e.addDeviceModal && !e.addDeviceModal.hasAttribute('hidden')) {
@@ -105,34 +173,14 @@ class DashboardApp extends HTMLElement {
       }
     });
 
-    this._initThemeToggle();
     this._bindAddDeviceForm();
+    this._bindDeleteDeviceForm();
     e.deviceSections.addEventListener('click', (event) => {
       void this._onDeviceSectionClick(event);
     });
     this.shadowRoot.addEventListener('click', (event) => {
       void this._onPaginationClick(event);
     });
-  }
-
-  _initThemeToggle() {
-    const root = document.documentElement;
-    const button = this._elements.themeToggle;
-    const savedTheme = window.localStorage.getItem('dashboard-theme');
-    if (savedTheme === 'dark' || savedTheme === 'light') {
-      root.dataset.theme = savedTheme;
-    }
-    this._updateThemeToggleText(button, root.dataset.theme === 'dark');
-    button.addEventListener('click', () => {
-      const isDark = root.dataset.theme === 'dark';
-      root.dataset.theme = isDark ? 'light' : 'dark';
-      window.localStorage.setItem('dashboard-theme', root.dataset.theme);
-      this._updateThemeToggleText(button, !isDark);
-    });
-  }
-
-  _updateThemeToggleText(button, isDark) {
-    button.textContent = isDark ? 'Light mode' : 'Dark mode';
   }
 
   _addDeviceModalHeadingText() {
@@ -173,6 +221,69 @@ class DashboardApp extends HTMLElement {
     document.body.style.overflow = '';
   }
 
+  _openDeleteDeviceModal(deviceId) {
+    const e = this._elements;
+    this._pendingDeleteDeviceId = String(deviceId);
+    e.deleteDeviceForm?.reset();
+    if (e.deleteDeviceStatus) {
+      e.deleteDeviceStatus.textContent = '';
+    }
+    e.deleteDeviceModal.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+    window.requestAnimationFrame(() => {
+      e.deleteDeviceForm?.querySelector('input[name="confirm"]')?.focus();
+    });
+  }
+
+  _closeDeleteDeviceModal() {
+    const { deleteDeviceModal } = this._elements;
+    if (!deleteDeviceModal || deleteDeviceModal.hasAttribute('hidden')) {
+      return;
+    }
+    deleteDeviceModal.setAttribute('hidden', '');
+    this._pendingDeleteDeviceId = null;
+    this._elements.deleteDeviceForm?.reset();
+    if (this._elements.deleteDeviceStatus) {
+      this._elements.deleteDeviceStatus.textContent = '';
+    }
+    document.body.style.overflow = '';
+  }
+
+  _openUpdateDeviceModal(card) {
+    const version = card?.desiredUpdateVersion;
+    if (!version) {
+      return;
+    }
+    const e = this._elements;
+    this._pendingUpdateCard = card;
+    if (e.updateDeviceVersion) {
+      e.updateDeviceVersion.textContent = version;
+    }
+    e.updateDeviceModal.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+    window.requestAnimationFrame(() => {
+      e.updateDeviceConfirm?.focus();
+    });
+  }
+
+  _closeUpdateDeviceModal() {
+    const { updateDeviceModal } = this._elements;
+    if (!updateDeviceModal || updateDeviceModal.hasAttribute('hidden')) {
+      return;
+    }
+    updateDeviceModal.setAttribute('hidden', '');
+    this._pendingUpdateCard = null;
+    document.body.style.overflow = '';
+  }
+
+  async _confirmUpdateDevice() {
+    const card = this._pendingUpdateCard;
+    this._closeUpdateDeviceModal();
+    if (card) {
+      await card.startUpdate();
+    }
+  }
+
   _bindAddDeviceForm() {
     const { addDeviceForm, addDeviceStatus } = this._elements;
     if (!addDeviceForm) {
@@ -203,6 +314,40 @@ class DashboardApp extends HTMLElement {
     });
   }
 
+  _bindDeleteDeviceForm() {
+    const { deleteDeviceForm, deleteDeviceStatus } = this._elements;
+    if (!deleteDeviceForm) {
+      return;
+    }
+    deleteDeviceForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const deviceId = this._pendingDeleteDeviceId;
+      if (!deviceId) {
+        return;
+      }
+      const typed = String(
+        new FormData(deleteDeviceForm).get('confirm') || '',
+      ).trim();
+      if (typed !== 'REMOVE') {
+        if (deleteDeviceStatus) {
+          deleteDeviceStatus.textContent = 'Type REMOVE exactly to confirm.';
+        }
+        return;
+      }
+      const result = await window.dashboardApi.deleteJson(
+        `/api/devices/${deviceId}`,
+      );
+      if (result.error) {
+        if (deleteDeviceStatus) {
+          deleteDeviceStatus.textContent = `Could not remove device: ${result.error}`;
+        }
+        return;
+      }
+      this._closeDeleteDeviceModal();
+      await this._refreshDeviceList();
+    });
+  }
+
   _totalPages() {
     return Math.max(1, Math.ceil(this._allDevices.length / DEVICES_PER_PAGE));
   }
@@ -221,6 +366,11 @@ class DashboardApp extends HTMLElement {
     const action = button.dataset.action;
     const deviceId = button.dataset.deviceId;
     if (!deviceId) {
+      return;
+    }
+    if (action === 'delete-device') {
+      // In-page modal: native confirm/prompt dialogs are suppressed in some browsers.
+      this._openDeleteDeviceModal(deviceId);
       return;
     }
     const card = this._deviceCard(deviceId);
@@ -253,21 +403,12 @@ class DashboardApp extends HTMLElement {
       }
       return;
     }
-    if (action === 'delete-device') {
-      const confirmed = window.confirm('Delete this device from the dashboard?');
-      if (!confirmed) {
-        return;
-      }
-      await window.dashboardApi.deleteJson(`/api/devices/${deviceId}`);
-      await this._refreshDeviceList();
-      return;
-    }
     if (action === 'fetch-device-snapshot') {
       await card.refreshSnapshot();
       return;
     }
     if (action === 'start-device-update') {
-      await card.startUpdate();
+      this._openUpdateDeviceModal(card);
     }
   }
 
@@ -371,10 +512,15 @@ class DashboardApp extends HTMLElement {
       if (!connectedStatus) {
         continue;
       }
-      connectedStatus.textContent = `Screenshot refreshed ${formatRelativeTime(capturedAt)}.`;
+      const kind = connectedStatus.dataset.previewKind;
+      if (kind === 'cached') {
+        connectedStatus.textContent = `Cached preview from ${formatRelativeTime(capturedAt)}.`;
+      } else if (kind === 'live') {
+        connectedStatus.textContent = `Live preview, updated ${formatRelativeTime(capturedAt)}.`;
+      }
     }
-    // "Last checked" is baked in at snapshot time; refresh relative labels so
-    // they age past "just now" like screenshot status does.
+    // Relative "checked … ago" is baked in at snapshot time; refresh the
+    // labels so they age past "just now" like screenshot status does.
     for (const el of this._elements.deviceSections.querySelectorAll('.status-checked-at')) {
       const checkedAt = el.getAttribute('data-checked-at');
       if (checkedAt) {
@@ -385,19 +531,26 @@ class DashboardApp extends HTMLElement {
 
   async _refreshVisibleDevicePanels() {
     const visibleDevices = this._getVisibleDevices();
-    for (const device of visibleDevices) {
-      const card = this._deviceCard(String(device.id));
-      if (!card) {
-        continue;
-      }
-      await card.refreshScreenshot(this._screenshotCapturedAtByDevice);
-      await card.refreshSnapshot();
-    }
+    await Promise.allSettled(
+      visibleDevices.map(async (device) => {
+        const card = this._deviceCard(String(device.id));
+        if (!card) {
+          return;
+        }
+        await Promise.allSettled([
+          card.refreshScreenshot(this._screenshotCapturedAtByDevice),
+          card.refreshSnapshot(),
+        ]);
+      }),
+    );
   }
 
   async _refreshDeviceList() {
     const payload = await window.dashboardApi.getJson('/api/devices');
-    this._allDevices = payload.devices || [];
+    if (payload.error || !Array.isArray(payload.devices)) {
+      return;
+    }
+    this._allDevices = payload.devices;
     for (const device of this._allDevices) {
       if (device.latest_screenshot_captured_at) {
         this._screenshotCapturedAtByDevice.set(String(device.id), device.latest_screenshot_captured_at);

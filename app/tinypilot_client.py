@@ -22,6 +22,15 @@ import urllib3
 # the dashboard's TinyPilot client only; see module docstring.
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+CONNECT_TIMEOUT_SEC = 3
+READ_TIMEOUT_SEC = 10
+SCREENSHOT_READ_TIMEOUT_SEC = 15
+UPDATE_READ_TIMEOUT_SEC = 30
+
+
+def _timeout(read: int = READ_TIMEOUT_SEC) -> tuple[int, int]:
+    return (CONNECT_TIMEOUT_SEC, read)
+
 
 class TinyPilotClient:
     """Thin HTTP client for a single TinyPilot device."""
@@ -59,25 +68,25 @@ class TinyPilotClient:
         raise requests.HTTPError(detail, response=response)
 
     def _get_json(self, path: str, *, bearer: bool = False) -> dict[str, Any]:
-        warmup = self.session.get(self.base_url, timeout=10)
+        warmup = self.session.get(self.base_url, timeout=_timeout())
         warmup.raise_for_status()
         headers = self._bearer_headers() if bearer else {}
         response = self.session.get(
             f'{self.base_url}{path}',
             headers=headers,
-            timeout=10,
+            timeout=_timeout(),
         )
         self._raise_for_status(response)
         return response.json()
 
     def _put_json(self, path: str, body: Optional[dict] = None) -> dict[str, Any]:
-        warmup = self.session.get(self.base_url, timeout=10)
+        warmup = self.session.get(self.base_url, timeout=_timeout())
         warmup.raise_for_status()
         response = self.session.put(
             f'{self.base_url}{path}',
             json=body,
             headers=self._bearer_headers(),
-            timeout=30,
+            timeout=_timeout(UPDATE_READ_TIMEOUT_SEC),
         )
         self._raise_for_status(response)
         return response.json() if response.content else {}
@@ -107,9 +116,9 @@ class TinyPilotClient:
         response = self.session.get(
             f'{self.base_url}/api/v1/screenshot',
             headers=self._bearer_headers(),
-            timeout=15,
+            timeout=_timeout(SCREENSHOT_READ_TIMEOUT_SEC),
         )
-        response.raise_for_status()
+        self._raise_for_status(response)
         if response.status_code == 204 or not response.content:
             raise ValueError(
                 'TinyPilot returned no screenshot image (HTTP 204 or empty body); '
@@ -122,7 +131,7 @@ class TinyPilotClient:
         response = self.session.get(
             f'{self.base_url}/state',
             headers=self._bearer_headers(),
-            timeout=10,
+            timeout=_timeout(),
         )
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response.json()

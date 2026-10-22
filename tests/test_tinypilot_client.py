@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock
 
 import pytest
-
 from app.tinypilot_client import TinyPilotClient
 
 
@@ -34,8 +33,11 @@ def test_get_version_sends_bearer_header(client):
     result = client.get_version()
 
     assert result['version'] == '3.2.0'
+    warmup_kwargs = mock_session.get.call_args_list[0][1]
+    assert warmup_kwargs['timeout'] == (3, 10)
     _args, kwargs = mock_session.get.call_args_list[1]
     assert kwargs['headers']['Authorization'] == 'Bearer test-key'
+    assert kwargs['timeout'] == (3, 10)
 
 
 def test_get_screenshot_uses_bearer_and_returns_bytes(client):
@@ -50,6 +52,7 @@ def test_get_screenshot_uses_bearer_and_returns_bytes(client):
     _args, kwargs = mock_session.get.call_args
     assert kwargs['headers']['Authorization'] == 'Bearer test-key'
     assert _args[0].endswith('/api/v1/screenshot')
+    assert kwargs['timeout'] == (3, 15)
 
 
 def test_get_latest_release_uses_bearer(client):

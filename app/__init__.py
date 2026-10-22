@@ -7,14 +7,15 @@ from flask import render_template
 from flask import send_from_directory
 
 from app.api import api_blueprint
-from app.db import close_db, init_db
+from app.db import close_db
+from app.db import init_db
 
 # Public product version. Version bands signal lifecycle stage to customers:
-#   0.1.x / 0.2.x  -> alpha
+#   0.1.x / 0.2.x / 0.3.x  -> alpha
 #   0.5.x          -> beta
 #   1.0.0          -> first stable release
 # Bump this on every customer-visible release.
-__version__ = '0.2.1'
+__version__ = '0.3.0'
 
 
 def create_app(test_config=None):

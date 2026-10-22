@@ -1,7 +1,38 @@
 import { escapeHtml, stringValue } from './strings.js';
+import {
+  latestVersionFrom,
+  licenseReason,
+  licenseStatusFrom,
+  updateBannerKind,
+} from './device-update.js';
 
 function snapshotRow(label, valueText) {
-  return `<div class="snapshot-row"><span>${escapeHtml(label)}</span><strong class="snapshot-row__value">${escapeHtml(valueText)}</strong></div>`;
+  return snapshotRowHtml(label, escapeHtml(valueText));
+}
+
+function snapshotRowHtml(label, valueHtml) {
+  return `<div class="snapshot-row"><span>${escapeHtml(label)}</span><strong class="snapshot-row__value">${valueHtml}</strong></div>`;
+}
+
+function formatSoftwareVersionRow(snapshot) {
+  const current =
+    snapshot.collapsed?.software_version
+    || snapshot.expanded?.version?.status?.version
+    || 'unknown';
+  const softwareUpdate = snapshot.expanded?.software_update || null;
+  const kind = updateBannerKind(softwareUpdate, current);
+  const latest = latestVersionFrom(softwareUpdate);
+  const id = snapshot.device_id;
+  let value = escapeHtml(current);
+  if (kind === 'available' && latest) {
+    value = `${escapeHtml(current)} → ${escapeHtml(latest)} <button type="button" data-action="start-device-update" data-device-id="${escapeHtml(String(id))}">Update</button>`;
+  } else if (kind === 'updating') {
+    value = `Updating TinyPilot${latest ? ` to ${escapeHtml(latest)}` : ''}…`;
+  } else if (kind === 'license-blocked' && latest) {
+    const href = escapeHtml(snapshot.source_base_url || '');
+    value = `${escapeHtml(current)} → ${escapeHtml(latest)}. ${escapeHtml(licenseReason(licenseStatusFrom(softwareUpdate)))}. ${href ? `<a class="launch-link" href="${href}" target="_blank" rel="noopener noreferrer">Attach license in WebUI</a>` : ''}`;
+  }
+  return snapshotRowHtml('Software version', value);
 }
 
 function friendlyInterfaceName(name) {
@@ -194,7 +225,6 @@ function formatVideoTuning(videoSettings, statusSettings) {
 export function formatExpandedSnapshot(snapshot) {
   const expanded = snapshot.expanded || {};
   const status = expanded.reachability?.status || {};
-  const version = expanded.version?.status || {};
   const video = expanded.video_settings?.status || {};
 
   const networkData = expanded.network?.data || {};
@@ -209,9 +239,8 @@ export function formatExpandedSnapshot(snapshot) {
     <div class="snapshot-expanded-stack">
       <div class="snapshot-section">
         <h4 class="snapshot-section-title">Overview</h4>
-        ${snapshotRow('Target URL', snapshot.source_base_url || 'unknown')}
-        ${snapshotRow('Software version', version.version || 'unknown')}
-        ${snapshotRow('Reachability', expanded.reachability?.error ? 'Error' : 'OK')}
+        ${snapshotRow('Device URL', snapshot.source_base_url || 'unknown')}
+        ${formatSoftwareVersionRow(snapshot)}
       </div>
       <div class="snapshot-section">
         <h4 class="snapshot-section-title">Network status</h4>
@@ -221,11 +250,6 @@ export function formatExpandedSnapshot(snapshot) {
         <h4 class="snapshot-section-title">Video</h4>
         ${videoRows.join('')}
       </div>
-      ${
-        expanded.last_management_error
-          ? `<div class="snapshot-section snapshot-section--error"><h4 class="snapshot-section-title">Last management error</h4><p class="snapshot-section-error-text">${escapeHtml(expanded.last_management_error)}</p></div>`
-          : ''
-      }
     </div>
   `;
 }

@@ -14,17 +14,22 @@ async function fetchJson(path, { method = 'GET', body } = {}) {
     method,
     credentials: 'same-origin',
     headers: {},
+    signal: AbortSignal.timeout(30_000),
   };
   if (body !== undefined) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
-  const response = await fetch(path, init);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    return { error: httpErrorMessage(data, response) };
+  try {
+    const response = await fetch(path, init);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { error: httpErrorMessage(data, response) };
+    }
+    return data;
+  } catch {
+    return { error: 'Could not reach the dashboard.' };
   }
-  return data;
 }
 
 async function postJson(path, payload = {}) {

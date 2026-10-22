@@ -14,14 +14,15 @@ from datetime import timezone
 from pathlib import Path
 from typing import Optional
 
+import requests
 from flask import Blueprint
 from flask import current_app
 from flask import jsonify
 from flask import request
 from flask import send_file
 
-from app.auth_store import encrypt_secret
 from app.auth_store import decrypt_secret
+from app.auth_store import encrypt_secret
 from app.db import get_db
 from app.device_update import can_start_update
 from app.device_update import update_available
@@ -224,7 +225,9 @@ def refresh_screenshot(device_id: int):
     try:
         screenshot = client.get_screenshot()
     except Exception as err:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': f'failed to refresh screenshot: {err}'}), 502
+        return jsonify(
+            {'error': f'failed to refresh screenshot: {_customer_error(err)}'}
+        ), 502
 
     db = get_db()
     data_root = Path(current_app.config['DATABASE_PATH']).resolve().parent
@@ -324,7 +327,25 @@ def _safe_fetch(fetcher):
     try:
         return fetcher(), None
     except Exception as err:  # pylint: disable=broad-exception-caught
-        return None, str(err)
+        return None, err
+
+
+def _is_unreachable(err) -> bool:
+    return isinstance(err, (requests.Timeout, requests.ConnectionError))
+
+
+def _customer_error(err):
+    if err is None:
+        return None
+    current_app.logger.warning('TinyPilot request failed: %s', err)
+    if _is_unreachable(err):
+        return 'Could not reach this TinyPilot.'
+    if isinstance(err, requests.HTTPError):
+        status = err.response.status_code if err.response is not None else None
+        if status:
+            return f'TinyPilot returned an error (HTTP {status}).'
+        return 'TinyPilot returned an error.'
+    return 'Could not complete this request.'
 
 
 @api_blueprint.get('/devices/<int:device_id>/device/snapshot')
@@ -360,32 +381,48 @@ def get_device_snapshot(device_id: int):
     client = TinyPilotClient(row['base_url'], api_key=api_key)
 
     # API-key allowlist (Pro 3.2.0+): version, network, video, /state, screenshot,
-    # latestRelease, update status/start.
-    status, status_error = _safe_fetch(client.get_status)
-    version, version_error = _safe_fetch(client.get_version)
-    network, network_error = _safe_fetch(client.get_network_status)
-    video, video_error = _safe_fetch(client.get_video_settings)
-    automation_state, automation_state_error = _safe_fetch(client.get_automation_state)
-    latest_release, latest_release_error = _safe_fetch(client.get_latest_release)
-    update_job, update_job_error = _safe_fetch(client.get_update_status)
-
-    last_error = (
-        status_error
-        or version_error
-        or network_error
-        or video_error
-        or automation_state_error
+    # latestRelease, update status/start. Stop after the first unreachable call.
+    fetched = {
+        'status': (None, None),
+        'version': (None, None),
+        'network': (None, None),
+        'video': (None, None),
+        'automation_state': (None, None),
+        'latest_release': (None, None),
+        'update_job': (None, None),
+    }
+    fetchers = (
+        ('status', client.get_status),
+        ('version', client.get_version),
+        ('network', client.get_network_status),
+        ('video', client.get_video_settings),
+        ('automation_state', client.get_automation_state),
+        ('latest_release', client.get_latest_release),
+        ('update_job', client.get_update_status),
     )
+    for name, fetcher in fetchers:
+        value, err = _safe_fetch(fetcher)
+        fetched[name] = (value, err)
+        if _is_unreachable(err):
+            break
 
-    online = any(
-        error is None
-        for error in (
-            status_error,
-            version_error,
-            network_error,
-            video_error,
-            automation_state_error,
-        )
+    status, status_error = fetched['status']
+    version, version_error = fetched['version']
+    network, network_error = fetched['network']
+    video, video_error = fetched['video']
+    automation_state, automation_state_error = fetched['automation_state']
+    latest_release, latest_release_error = fetched['latest_release']
+    update_job, update_job_error = fetched['update_job']
+
+    probe_errors = (
+        status_error,
+        version_error,
+        network_error,
+        video_error,
+        automation_state_error,
+    )
+    online = any(error is None for error in probe_errors) and not any(
+        _is_unreachable(error) for error in probe_errors
     )
 
     connected_resolution = (
@@ -407,18 +444,20 @@ def get_device_snapshot(device_id: int):
     }
 
     expanded = {
-        'reachability': {'status': status, 'error': status_error},
-        'version': {'status': version, 'error': version_error},
-        'network': {'data': network or {}, 'error': network_error},
-        'video_settings': {'status': video, 'error': video_error},
-        'automation_state': {'status': automation_state, 'error': automation_state_error},
+        'reachability': {'status': status, 'error': _customer_error(status_error)},
+        'version': {'status': version, 'error': _customer_error(version_error)},
+        'network': {'data': network or {}, 'error': _customer_error(network_error)},
+        'video_settings': {'status': video, 'error': _customer_error(video_error)},
+        'automation_state': {
+            'status': automation_state,
+            'error': _customer_error(automation_state_error),
+        },
         'connected_device_resolution': connected_resolution,
-        'last_management_error': last_error,
         'software_update': {
             'latest': latest_release,
-            'latest_error': latest_release_error,
+            'latest_error': _customer_error(latest_release_error),
             'job': update_job,
-            'job_error': update_job_error,
+            'job_error': _customer_error(update_job_error),
             'update_available': update_available(current_version, latest_version),
             'can_start': can_start_update(
                 current_version, latest_version, license_check_status
@@ -444,7 +483,9 @@ def get_device_update_status(device_id: int):
     try:
         result = client.get_update_status()
     except Exception as exc:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': f'failed to fetch update status: {exc}'}), 502
+        return jsonify(
+            {'error': f'failed to fetch update status: {_customer_error(exc)}'}
+        ), 502
     return jsonify(result)
 
 
@@ -460,5 +501,7 @@ def start_device_update(device_id: int):
     try:
         client.start_update(version)
     except Exception as exc:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': f'failed to start update: {exc}'}), 502
+        return jsonify(
+            {'error': f'failed to start update: {_customer_error(exc)}'}
+        ), 502
     return jsonify({'device_id': device_id, 'update_started': True, 'version': version})

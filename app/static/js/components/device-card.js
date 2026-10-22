@@ -2,24 +2,22 @@ import { escapeHtml, formatRelativeTime } from '../lib/strings.js';
 import { formatExpandedSnapshot } from '../lib/snapshot-view.js';
 import {
   latestVersionFrom,
-  licenseReason,
-  licenseStatusFrom,
   updateBannerKind,
 } from '../lib/device-update.js';
 
 const AUTOMATION_LICENSE_INFO_URL = 'https://tinypilotkvm.com/pages/automation';
 const UPDATE_POLL_INTERVAL_MS = 3000;
+const UPDATE_POLL_MAX_ERRORS = 10;
 
 function formatCollapsedSnapshotSummary(c) {
   const checkedAt = c.last_checked || '';
   const checkedText = formatRelativeTime(checkedAt);
+  const label = c.online ? 'Connected' : 'Could not reach this TinyPilot';
   return `
         <div class="status-line">
           <span class="status-dot ${c.online ? 'is-connected' : 'is-disconnected'}"></span>
-          <span class="status-label">${c.online ? 'Connected' : 'Disconnected'}</span>
-          <span class="status-meta">v${escapeHtml(c.software_version || 'unknown')} · Last checked <span class="status-checked-at" data-checked-at="${escapeHtml(checkedAt)}">${escapeHtml(checkedText)}</span></span>
+          <span class="status-copy"><span class="status-label">${label}</span><span class="status-meta">, checked <span class="status-checked-at" data-checked-at="${escapeHtml(checkedAt)}">${escapeHtml(checkedText)}</span>.</span></span>
         </div>
-        <div class="status-url">${escapeHtml(c.device_url || '')}</div>
       `;
 }
 
@@ -30,6 +28,54 @@ function deactivateScreenshotLink(link) {
   link.classList.remove('connected-screenshot-link--available');
   link.setAttribute('tabindex', '-1');
   link.setAttribute('aria-disabled', 'true');
+}
+
+function activateScreenshotLink(link) {
+  if (!link) {
+    return;
+  }
+  link.classList.add('connected-screenshot-link--available');
+  link.setAttribute('tabindex', '0');
+  link.removeAttribute('aria-disabled');
+}
+
+function deviceLaunchHref(device) {
+  return String(device.base_url || '').trim();
+}
+
+function cachedPreviewCopy(capturedAt) {
+  return `Cached preview from ${formatRelativeTime(capturedAt)}.`;
+}
+
+function missingPreviewCopy() {
+  return 'Could not capture a screenshot.';
+}
+
+function setPreviewStatus(el, text, kind) {
+  if (!el) {
+    return;
+  }
+  el.textContent = text;
+  el.classList.toggle(
+    'connected-status--caution',
+    kind === 'cached' || kind === 'error',
+  );
+  if (kind) {
+    el.dataset.previewKind = kind;
+  } else {
+    delete el.dataset.previewKind;
+  }
+}
+
+function renderHeaderOpenWebUi(device) {
+  const url = deviceLaunchHref(device);
+  if (!url) {
+    return '';
+  }
+  return (
+    `<a class="header-open-webui" href="${escapeHtml(url)}" ` +
+    `target="_blank" rel="noopener noreferrer">Open WebUI</a>`
+  );
 }
 
 class DeviceCard extends HTMLElement {
@@ -52,6 +98,10 @@ class DeviceCard extends HTMLElement {
     return this._device;
   }
 
+  get desiredUpdateVersion() {
+    return this._desiredUpdateVersion;
+  }
+
   connectedCallback() {
     if (this._device) {
       this._render();
@@ -71,7 +121,7 @@ class DeviceCard extends HTMLElement {
       summaryOutput: this.querySelector(`#device-collapsed-summary-${id}`),
       metricsOutput: this.querySelector(`#device-metrics-output-${id}`),
       intervalInput: this.querySelector(`#screenshot-interval-${id}`),
-      updateBanner: this.querySelector(`#device-update-banner-${id}`),
+      expandedDetails: this.querySelector(`#device-details-${id}`),
     };
   }
 
@@ -81,11 +131,13 @@ class DeviceCard extends HTMLElement {
       return;
     }
     const id = device.id;
+    const launchHref = deviceLaunchHref(device);
     this.className = 'device-wrapper';
     this.innerHTML = `
       <section class="panel device-card">
         <header class="device-card-header">
           <h3 class="device-card-title">${escapeHtml(device.friendly_name)}</h3>
+          ${renderHeaderOpenWebUi(device)}
         </header>
         <section class="device-section connected-system">
           <div class="connected-system-header">
@@ -98,12 +150,12 @@ class DeviceCard extends HTMLElement {
             <a
               id="connected-screenshot-link-${id}"
               class="connected-screenshot-link"
-              href="/api/devices/${id}/latest-screenshot"
+              href="${escapeHtml(launchHref) || '#'}"
               target="_blank"
               rel="noopener noreferrer"
               tabindex="-1"
               aria-disabled="true"
-              aria-label="Open latest screenshot in new tab"
+              aria-label="Control ${escapeHtml(device.friendly_name)}"
             >
               <img
                 id="connected-screenshot-${id}"
@@ -132,26 +184,46 @@ class DeviceCard extends HTMLElement {
           </div>
         </section>
         <section class="device-section tiny-device">
-          <h3>TinyPilot device</h3>
-          <p>
-            <a class="launch-link" href="${escapeHtml(device.base_url)}" target="_blank" rel="noopener noreferrer">Launch WebUI ↗</a>
-          </p>
-          <div class="actions">
-            <button type="button" data-action="fetch-device-snapshot" data-device-id="${id}">Refresh device snapshot</button>
-            <button type="button" data-action="delete-device" data-device-id="${id}">Delete device</button>
+          <div class="tiny-device-header">
+            <h3 class="connected-system-summary__heading">TinyPilot device</h3>
           </div>
-          <div id="device-collapsed-summary-${id}" class="metrics-output">
-            Retrieving device snapshot...
+          <div class="tiny-device-body">
+            <div class="actions">
+              <button type="button" data-action="fetch-device-snapshot" data-device-id="${id}">Refresh device snapshot</button>
+              <button type="button" data-action="delete-device" data-device-id="${id}">Remove device</button>
+            </div>
+            <div id="device-collapsed-summary-${id}" class="metrics-output">
+              Retrieving device snapshot...
+            </div>
+            <details id="device-details-${id}" class="device-details" hidden>
+              <summary>Expanded TinyPilot device info</summary>
+              <div id="device-metrics-output-${id}" class="metrics-output"></div>
+            </details>
           </div>
-          <div id="device-update-banner-${id}" class="device-update-banner" hidden></div>
-          <details class="device-details">
-            <summary>Expanded TinyPilot device info</summary>
-            <div id="device-metrics-output-${id}" class="metrics-output">Retrieving expanded device info...</div>
-          </details>
         </section>
       </section>
     `;
     this._cacheElements();
+    this._primeCachedScreenshot();
+  }
+
+  _primeCachedScreenshot() {
+    const device = this._device;
+    if (!device?.latest_screenshot_captured_at) {
+      return;
+    }
+    const { screenshot, link, connectedStatus } = this._elements;
+    if (!screenshot) {
+      return;
+    }
+    const capturedAt = device.latest_screenshot_captured_at;
+    const busted = `/api/devices/${device.id}/latest-screenshot?t=${encodeURIComponent(capturedAt)}`;
+    screenshot.src = busted;
+    screenshot.classList.add('connected-screenshot--cached');
+    if (deviceLaunchHref(device)) {
+      activateScreenshotLink(link);
+    }
+    setPreviewStatus(connectedStatus, cachedPreviewCopy(capturedAt), 'cached');
   }
 
   async refreshScreenshot(capturedAtByDevice) {
@@ -166,30 +238,41 @@ class DeviceCard extends HTMLElement {
     deactivateScreenshotLink(link);
 
     const result = await window.dashboardApi.postJson(`/api/devices/${id}/refresh-screenshot`);
-
-    if (connectedStatus) {
-      if (result.error) {
-        connectedStatus.textContent = `Screenshot failed: ${result.error}`;
-      } else {
-        capturedAtByDevice.set(String(id), result.captured_at || new Date().toISOString());
-        connectedStatus.textContent = `Screenshot refreshed ${formatRelativeTime(result.captured_at)}.`;
+    const cachedAt =
+      capturedAtByDevice.get(String(id)) ||
+      this._device.latest_screenshot_captured_at;
+    const enableLaunch = () => {
+      if (deviceLaunchHref(this._device)) {
+        activateScreenshotLink(link);
       }
-    }
+    };
 
     if (result.error || !screenshot) {
+      if (cachedAt) {
+        screenshot?.classList.add('connected-screenshot--cached');
+        enableLaunch();
+        setPreviewStatus(
+          connectedStatus,
+          cachedPreviewCopy(cachedAt),
+          'cached',
+        );
+      } else {
+        setPreviewStatus(connectedStatus, missingPreviewCopy(), 'error');
+      }
       return;
     }
 
+    capturedAtByDevice.set(String(id), result.captured_at || new Date().toISOString());
     const busted = `/api/devices/${id}/latest-screenshot?t=${Date.now()}`;
 
-    const activateScreenshotLink = () => {
-      if (!link) {
-        return;
-      }
-      link.classList.add('connected-screenshot-link--available');
-      link.setAttribute('tabindex', '0');
-      link.removeAttribute('aria-disabled');
-      link.href = busted;
+    const markLive = () => {
+      screenshot.classList.remove('connected-screenshot--cached');
+      enableLaunch();
+      setPreviewStatus(
+        connectedStatus,
+        `Live preview, updated ${formatRelativeTime(result.captured_at)}.`,
+        'live',
+      );
     };
 
     // Pre-load into an off-screen Image. Only swap the displayed <img> src
@@ -197,24 +280,41 @@ class DeviceCard extends HTMLElement {
     const preload = new Image();
     preload.onload = () => {
       screenshot.src = busted;
-      activateScreenshotLink();
-      if (connectedStatus) {
-        connectedStatus.textContent = `Screenshot refreshed ${formatRelativeTime(result.captured_at)}.`;
-      }
+      markLive();
     };
     preload.onerror = () => {
-      // Keep the current screenshot; show a status note.
-      if (connectedStatus) {
-        connectedStatus.textContent = 'Screenshot failed to load (image error).';
+      if (cachedAt) {
+        screenshot.classList.add('connected-screenshot--cached');
+        enableLaunch();
+        setPreviewStatus(
+          connectedStatus,
+          cachedPreviewCopy(cachedAt),
+          'cached',
+        );
+      } else {
+        setPreviewStatus(connectedStatus, missingPreviewCopy(), 'error');
+        deactivateScreenshotLink(link);
       }
-      deactivateScreenshotLink(link);
     };
     preload.src = busted;
 
     // If already cached, onload may have fired synchronously — handle that case.
     if (preload.complete && preload.naturalWidth > 0 && screenshot.src !== busted) {
       screenshot.src = busted;
-      activateScreenshotLink();
+      markLive();
+    }
+  }
+
+  _setExpandedVisible(visible) {
+    const { expandedDetails, metricsOutput } = this._elements;
+    if (expandedDetails) {
+      expandedDetails.hidden = !visible;
+      if (!visible) {
+        expandedDetails.open = false;
+      }
+    }
+    if (!visible && metricsOutput) {
+      metricsOutput.innerHTML = '';
     }
   }
 
@@ -225,6 +325,7 @@ class DeviceCard extends HTMLElement {
     const id = this._device.id;
     const { summaryOutput, metricsOutput } = this._elements;
     const snapshot = await window.dashboardApi.getJson(`/api/devices/${id}/device/snapshot`);
+    const online = Boolean(snapshot.collapsed?.online);
 
     if (summaryOutput) {
       if (snapshot.error) {
@@ -233,115 +334,82 @@ class DeviceCard extends HTMLElement {
         summaryOutput.innerHTML = formatCollapsedSnapshotSummary(snapshot.collapsed);
       }
     }
-    if (metricsOutput) {
-      if (snapshot.error) {
-        metricsOutput.textContent = snapshot.error;
-      } else {
-        metricsOutput.innerHTML = formatExpandedSnapshot(snapshot);
-      }
-    }
-    if (!snapshot.error) {
-      this._renderUpdateBanner(snapshot);
+    if (snapshot.error || !online) {
+      this._setExpandedVisible(false);
+      this._stopUpdatePoll();
+    } else if (metricsOutput) {
+      this._setExpandedVisible(true);
+      metricsOutput.innerHTML = formatExpandedSnapshot(snapshot);
+      this._syncSoftwareUpdate(snapshot);
     }
   }
 
   _stopUpdatePoll() {
     if (this._updatePollTimer) {
-      window.clearInterval(this._updatePollTimer);
+      window.clearTimeout(this._updatePollTimer);
       this._updatePollTimer = null;
     }
   }
 
-  _renderUpdateBanner(snapshot) {
-    const banner = this._elements.updateBanner;
-    if (!banner || !this._device) {
-      return;
-    }
-    const id = this._device.id;
+  _syncSoftwareUpdate(snapshot) {
     const currentVersion = snapshot.collapsed?.software_version || '';
     const softwareUpdate = snapshot.expanded?.software_update || null;
     const kind = updateBannerKind(softwareUpdate, currentVersion);
-    const latestVersion = latestVersionFrom(softwareUpdate);
-    const licenseStatus = licenseStatusFrom(softwareUpdate);
-    const jobError = softwareUpdate?.job?.updateError;
-
-    if (!kind || kind === 'hidden') {
-      banner.hidden = true;
-      banner.innerHTML = '';
-      this._stopUpdatePoll();
-      return;
+    if (kind === 'available') {
+      this._desiredUpdateVersion = latestVersionFrom(softwareUpdate);
     }
-
-    banner.hidden = false;
     if (kind === 'updating') {
-      banner.innerHTML = `
-        <p class="device-update-banner__text">
-          Updating TinyPilot${latestVersion ? ` to ${escapeHtml(latestVersion)}` : ''}…
-          ${jobError ? `<span class="device-update-banner__error">${escapeHtml(jobError)}</span>` : ''}
-        </p>
-      `;
       this._startUpdatePoll();
-      return;
-    }
-    if (kind === 'error') {
-      banner.innerHTML = `
-        <p class="device-update-banner__text">
-          Could not check for updates:
-          ${escapeHtml(softwareUpdate.latest_error || 'unknown error')}
-        </p>
-      `;
+    } else {
       this._stopUpdatePoll();
+    }
+  }
+
+  _setSoftwareVersionValue(html) {
+    const { metricsOutput } = this._elements;
+    if (!metricsOutput) {
       return;
     }
-    if (kind === 'license-blocked') {
-      banner.innerHTML = `
-        <p class="device-update-banner__text">
-          Update available (${escapeHtml(currentVersion)} → ${escapeHtml(latestVersion)}),
-          but ${escapeHtml(licenseReason(licenseStatus))}.
-          <a class="launch-link" href="${escapeHtml(this._device.base_url)}" target="_blank" rel="noopener noreferrer">Attach license in WebUI ↗</a>
-        </p>
-      `;
-      this._stopUpdatePoll();
-      return;
+    for (const row of metricsOutput.querySelectorAll('.snapshot-row')) {
+      const label = row.querySelector('span');
+      if (label && label.textContent === 'Software version') {
+        const value = row.querySelector('.snapshot-row__value');
+        if (value) {
+          value.innerHTML = html;
+        }
+      }
     }
-    // available
-    this._desiredUpdateVersion = latestVersion;
-    banner.innerHTML = `
-      <p class="device-update-banner__text">
-        Update available: ${escapeHtml(currentVersion)} → ${escapeHtml(latestVersion)}
-      </p>
-      <div class="device-update-banner__actions">
-        <button type="button" data-action="start-device-update" data-device-id="${id}">Update</button>
-      </div>
-    `;
-    this._stopUpdatePoll();
   }
 
   _startUpdatePoll() {
     if (this._updatePollTimer || !this._device) {
       return;
     }
+    this._updatePollErrors = 0;
     const id = this._device.id;
-    this._updatePollTimer = window.setInterval(async () => {
+    const tick = async () => {
       const status = await window.dashboardApi.getJson(`/api/devices/${id}/device/update`);
       if (status.error) {
+        this._updatePollErrors += 1;
+        if (this._updatePollErrors >= UPDATE_POLL_MAX_ERRORS) {
+          this._stopUpdatePoll();
+          this._setSoftwareVersionValue('Lost contact during update. Refresh to check.');
+          return;
+        }
+        this._updatePollTimer = window.setTimeout(tick, UPDATE_POLL_INTERVAL_MS);
         return;
       }
+      this._updatePollErrors = 0;
       if (status.status === 'IN_PROGRESS') {
-        const banner = this._elements.updateBanner;
-        if (banner && !banner.hidden) {
-          const err = status.updateError
-            ? `<span class="device-update-banner__error">${escapeHtml(status.updateError)}</span>`
-            : '';
-          banner.innerHTML = `
-            <p class="device-update-banner__text">Updating TinyPilot… ${err}</p>
-          `;
-        }
+        const err = status.updateError ? ` ${escapeHtml(status.updateError)}` : '';
+        this._setSoftwareVersionValue(`Updating TinyPilot…${err}`);
+        this._updatePollTimer = window.setTimeout(tick, UPDATE_POLL_INTERVAL_MS);
         return;
       }
       this._stopUpdatePoll();
       await this.refreshSnapshot();
-    }, UPDATE_POLL_INTERVAL_MS);
+    };
+    this._updatePollTimer = window.setTimeout(tick, UPDATE_POLL_INTERVAL_MS);
   }
 
   async startUpdate() {
@@ -349,24 +417,16 @@ class DeviceCard extends HTMLElement {
       return;
     }
     const id = this._device.id;
-    const banner = this._elements.updateBanner;
-    if (banner) {
-      banner.hidden = false;
-      banner.innerHTML = `<p class="device-update-banner__text">Starting update…</p>`;
-    }
     const result = await window.dashboardApi.putJson(`/api/devices/${id}/device/update`, {
       version: this._desiredUpdateVersion,
     });
     if (result.error) {
-      if (banner) {
-        banner.innerHTML = `
-          <p class="device-update-banner__text device-update-banner__error">
-            ${escapeHtml(result.error)}
-          </p>
-        `;
-      }
+      this._setSoftwareVersionValue(
+        `${escapeHtml(this._desiredUpdateVersion)} <span class="snapshot-section-error-text">${escapeHtml(result.error)}</span>`,
+      );
       return;
     }
+    this._setSoftwareVersionValue('Updating TinyPilot…');
     this._startUpdatePoll();
   }
 
