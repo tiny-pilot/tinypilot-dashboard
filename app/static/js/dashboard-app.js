@@ -519,8 +519,8 @@ class DashboardApp extends HTMLElement {
         connectedStatus.textContent = `Live preview, updated ${formatRelativeTime(capturedAt)}.`;
       }
     }
-    // "Last checked" is baked in at snapshot time; refresh relative labels so
-    // they age past "just now" like screenshot status does.
+    // Relative "checked … ago" is baked in at snapshot time; refresh the
+    // labels so they age past "just now" like screenshot status does.
     for (const el of this._elements.deviceSections.querySelectorAll('.status-checked-at')) {
       const checkedAt = el.getAttribute('data-checked-at');
       if (checkedAt) {

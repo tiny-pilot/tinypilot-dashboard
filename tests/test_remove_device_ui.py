@@ -94,7 +94,7 @@ def test_tinypilot_snapshot_health_line_and_software_row():
     summary = summary.split('function ', 1)[0]
     assert 'Connected' in summary
     assert 'Could not reach this TinyPilot' in summary
-    assert '${label}</span><span class="status-meta">, last checked' in summary
+    assert '${label}</span><span class="status-meta">, checked' in summary
     assert 'class="status-copy"' in summary
     assert 'Disconnected' not in summary
     assert 'software_version' not in summary

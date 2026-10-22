@@ -16,7 +16,7 @@ function formatCollapsedSnapshotSummary(c) {
   return `
         <div class="status-line">
           <span class="status-dot ${c.online ? 'is-connected' : 'is-disconnected'}"></span>
-          <span class="status-copy"><span class="status-label">${label}</span><span class="status-meta">, last checked <span class="status-checked-at" data-checked-at="${escapeHtml(checkedAt)}">${escapeHtml(checkedText)}</span>.</span></span>
+          <span class="status-copy"><span class="status-label">${label}</span><span class="status-meta">, checked <span class="status-checked-at" data-checked-at="${escapeHtml(checkedAt)}">${escapeHtml(checkedText)}</span>.</span></span>
         </div>
       `;
 }
