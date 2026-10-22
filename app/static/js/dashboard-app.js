@@ -32,7 +32,6 @@ class DashboardApp extends HTMLElement {
         </div>
         <div class="topbar-actions">
           <button id="add-device-toggle" type="button" class="theme-toggle">${ADD_DEVICE_TOGGLE_LABEL}</button>
-          <button id="theme-toggle" type="button" class="theme-toggle">Dark mode</button>
         </div>
       </header>
       <main class="dashboard">
@@ -91,7 +90,6 @@ class DashboardApp extends HTMLElement {
       deviceSections: this.shadowRoot.getElementById('device-sections'),
       devicePagination: this.shadowRoot.getElementById('device-pagination'),
       addDeviceToggle: this.shadowRoot.getElementById('add-device-toggle'),
-      themeToggle: this.shadowRoot.getElementById('theme-toggle'),
       addDeviceModal: this.shadowRoot.getElementById('add-device-modal'),
       addDeviceHeading: this.shadowRoot.getElementById('add-device-heading'),
       addDeviceModalClose: this.shadowRoot.getElementById('add-device-modal-close'),
@@ -142,7 +140,6 @@ class DashboardApp extends HTMLElement {
       }
     });
 
-    this._initThemeToggle();
     this._bindAddDeviceForm();
     this._bindDeleteDeviceForm();
     e.deviceSections.addEventListener('click', (event) => {
@@ -151,26 +148,6 @@ class DashboardApp extends HTMLElement {
     this.shadowRoot.addEventListener('click', (event) => {
       void this._onPaginationClick(event);
     });
-  }
-
-  _initThemeToggle() {
-    const root = document.documentElement;
-    const button = this._elements.themeToggle;
-    const savedTheme = window.localStorage.getItem('dashboard-theme');
-    if (savedTheme === 'dark' || savedTheme === 'light') {
-      root.dataset.theme = savedTheme;
-    }
-    this._updateThemeToggleText(button, root.dataset.theme === 'dark');
-    button.addEventListener('click', () => {
-      const isDark = root.dataset.theme === 'dark';
-      root.dataset.theme = isDark ? 'light' : 'dark';
-      window.localStorage.setItem('dashboard-theme', root.dataset.theme);
-      this._updateThemeToggleText(button, !isDark);
-    });
-  }
-
-  _updateThemeToggleText(button, isDark) {
-    button.textContent = isDark ? 'Light mode' : 'Dark mode';
   }
 
   _addDeviceModalHeadingText() {
@@ -467,7 +444,12 @@ class DashboardApp extends HTMLElement {
       if (!connectedStatus) {
         continue;
       }
-      connectedStatus.textContent = `Screenshot refreshed ${formatRelativeTime(capturedAt)}.`;
+      const kind = connectedStatus.dataset.previewKind;
+      if (kind === 'cached') {
+        connectedStatus.textContent = `Cached preview from ${formatRelativeTime(capturedAt)}.`;
+      } else if (kind === 'live') {
+        connectedStatus.textContent = `Live preview, updated ${formatRelativeTime(capturedAt)}.`;
+      }
     }
     // "Last checked" is baked in at snapshot time; refresh relative labels so
     // they age past "just now" like screenshot status does.
@@ -481,19 +463,26 @@ class DashboardApp extends HTMLElement {
 
   async _refreshVisibleDevicePanels() {
     const visibleDevices = this._getVisibleDevices();
-    for (const device of visibleDevices) {
-      const card = this._deviceCard(String(device.id));
-      if (!card) {
-        continue;
-      }
-      await card.refreshScreenshot(this._screenshotCapturedAtByDevice);
-      await card.refreshSnapshot();
-    }
+    await Promise.allSettled(
+      visibleDevices.map(async (device) => {
+        const card = this._deviceCard(String(device.id));
+        if (!card) {
+          return;
+        }
+        await Promise.allSettled([
+          card.refreshScreenshot(this._screenshotCapturedAtByDevice),
+          card.refreshSnapshot(),
+        ]);
+      }),
+    );
   }
 
   async _refreshDeviceList() {
     const payload = await window.dashboardApi.getJson('/api/devices');
-    this._allDevices = payload.devices || [];
+    if (payload.error || !Array.isArray(payload.devices)) {
+      return;
+    }
+    this._allDevices = payload.devices;
     for (const device of this._allDevices) {
       if (device.latest_screenshot_captured_at) {
         this._screenshotCapturedAtByDevice.set(String(device.id), device.latest_screenshot_captured_at);

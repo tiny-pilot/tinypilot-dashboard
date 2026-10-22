@@ -8,5 +8,10 @@ from app import create_app
 @pytest.fixture
 def client(tmp_path):
     db_path = tmp_path / 'dashboard.sqlite'
-    app = create_app({'TESTING': True, 'DATABASE_PATH': str(db_path)})
+    key_path = tmp_path / 'secret.key'
+    app = create_app({
+        'TESTING': True,
+        'DATABASE_PATH': str(db_path),
+        'SECRET_KEY_PATH': str(key_path),
+    })
     return app.test_client()

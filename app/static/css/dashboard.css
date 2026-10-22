@@ -234,8 +234,17 @@ button.button-danger-quiet:hover {
   margin: 0;
 }
 
-.connected-system-body {
+.connected-system-body,
+.tiny-device-body {
   margin-top: var(--space-3);
+}
+
+.tiny-device-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .connected-screenshot-link {
@@ -278,6 +287,10 @@ button.button-danger-quiet:hover {
   background: transparent;
 }
 
+.connected-screenshot.connected-screenshot--cached {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-warning) 70%, transparent);
+}
+
 .launch-link {
   color: var(--color-accent);
   text-decoration: none;
@@ -296,6 +309,17 @@ button.button-danger-quiet:hover {
 
 .subtitle {
   color: var(--color-muted);
+}
+
+.connected-system .subtitle {
+  margin: var(--space-2) 0 0;
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.subtitle.connected-status--caution {
+  color: var(--color-warning);
 }
 
 .actions {
@@ -400,19 +424,32 @@ input {
 }
 
 button {
-  background: hsl(230, 16%, 55%) linear-gradient(0deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0) 60%);
-  color: #fff;
-  border: 1px solid hsl(230, 18%, 45%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: max-content;
+  background: var(--color-nav);
+  color: var(--color-nav-text);
+  border: 1px solid rgba(255, 255, 255, 0.45);
   border-radius: var(--radius-md);
-  padding: 0.4rem 1rem;
+  padding: 0.5rem 1.25rem 0.4rem;
+  margin: 0;
   cursor: pointer;
+  font-family: inherit;
   font-size: 1rem;
   font-weight: 500;
-  transition: background 250ms ease-in-out, transform 150ms ease;
+  line-height: 1;
+  text-align: center;
+  appearance: none;
+  -webkit-appearance: none;
+  transition:
+    background 250ms ease-in-out,
+    transform 150ms ease;
 }
 
 button:hover {
-  background-color: hsl(230, 18%, 65%);
+  background: color-mix(in srgb, var(--color-nav) 88%, #fff);
 }
 
 button:disabled {
@@ -513,13 +550,34 @@ button:active {
   font-size: 0.9rem;
 }
 
-.theme-toggle {
+.theme-toggle,
+button.theme-toggle {
   margin: 0;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0 0.85rem;
+  font-family: inherit;
   font-size: 0.85rem;
   font-weight: 500;
-  padding: 0.2rem 0.6rem;
+  line-height: 1;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: var(--radius-md);
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+a.theme-toggle:hover,
+a.theme-toggle:visited {
+  color: inherit;
+  text-decoration: none;
 }
 
 .theme-toggle:hover {
@@ -531,6 +589,10 @@ button:active {
   align-items: center;
   gap: 8px;
   margin-bottom: 4px;
+}
+
+.status-copy {
+  min-width: 0;
 }
 
 .status-dot {
@@ -556,8 +618,7 @@ button:active {
   line-height: 1;
 }
 
-.status-meta,
-.status-url {
+.status-meta {
   color: var(--color-muted);
 }
 
@@ -610,6 +671,11 @@ button:active {
 }
 
 .snapshot-row .snapshot-row__value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
   flex: 1 1 auto;
   min-width: 0;
   font-weight: 600;
@@ -773,8 +839,7 @@ button:active {
 }
 
 :root[data-theme="dark"] .snapshot-row > span:first-child,
-:root[data-theme="dark"] .status-meta,
-:root[data-theme="dark"] .status-url {
+:root[data-theme="dark"] .status-meta {
   color: hsl(220, 20%, 82%);
 }
 
@@ -785,28 +850,6 @@ button:active {
   }
 }
 
-.device-update-banner {
-  margin-top: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
-}
-
-.device-update-banner__text {
-  margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.4;
-}
-
-.device-update-banner__actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: var(--space-2);
-}
-
-.device-update-banner__error {
-  display: block;
-  margin-top: var(--space-1);
-  color: var(--color-danger, #b42318);
+.snapshot-row__value button {
+  flex-shrink: 0;
 }

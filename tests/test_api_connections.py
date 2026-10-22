@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import requests
+
 from app import create_app
 from app.resolution import resolution_from_automation_state
 
@@ -297,6 +299,33 @@ def test_refresh_screenshot_surfaces_api_errors(client):
 
     assert response.status_code == 502
     assert 'failed to refresh screenshot' in response.json['error']
+    assert 'Could not complete this request.' in response.json['error']
+    assert 'HTTPSConnectionPool' not in response.json['error']
+
+
+def test_refresh_screenshot_hides_connection_details(client):
+    create_payload = {
+        'friendly_name': 'Offline Screenshot',
+        'base_url': 'https://192.168.1.67',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+
+    with patch('app.api.TinyPilotClient') as client_cls:
+        client_cls.return_value.get_screenshot.side_effect = (
+            requests.ConnectionError(
+                'HTTPSConnectionPool(host=192.168.1.67, port=443): Max retries'
+            )
+        )
+        response = client.post(f'/api/devices/{device_id}/refresh-screenshot')
+
+    assert response.status_code == 502
+    assert response.json['error'] == (
+        'failed to refresh screenshot: Could not reach this TinyPilot.'
+    )
+    assert 'HTTPSConnectionPool' not in response.json['error']
+    assert '192.168.1.67' not in response.json['error']
 
 
 def test_device_snapshot_license_blocked_update_cannot_start(client):
@@ -384,3 +413,62 @@ def test_get_device_update_status_endpoint(client):
 
     assert response.status_code == 200
     assert response.json['status'] == 'IN_PROGRESS'
+
+
+def test_device_snapshot_stops_when_device_unreachable(client):
+    create_payload = {
+        'friendly_name': 'Unreachable Box',
+        'base_url': 'https://192.168.1.77',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+
+    with patch('app.api.TinyPilotClient') as client_cls:
+        tp_client = client_cls.return_value
+        tp_client.get_status.side_effect = requests.ConnectionError('offline')
+        response = client.get(f'/api/devices/{device_id}/device/snapshot')
+
+    assert response.status_code == 200
+    payload = response.json
+    assert payload['collapsed']['online'] is False
+    assert payload['expanded']['reachability']['error'] == (
+        'Could not reach this TinyPilot.'
+    )
+    assert 'HTTPSConnectionPool' not in str(payload)
+    assert '192.168.1.77' not in payload['expanded']['reachability']['error']
+    assert 'last_management_error' not in payload['expanded']
+    tp_client.get_version.assert_not_called()
+    tp_client.get_network_status.assert_not_called()
+    tp_client.get_video_settings.assert_not_called()
+    tp_client.get_automation_state.assert_not_called()
+    tp_client.get_latest_release.assert_not_called()
+    tp_client.get_update_status.assert_not_called()
+
+
+def test_device_snapshot_stops_when_later_call_times_out(client):
+    create_payload = {
+        'friendly_name': 'Partial Timeout',
+        'base_url': 'https://192.168.1.78',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+
+    with patch('app.api.TinyPilotClient') as client_cls:
+        tp_client = client_cls.return_value
+        tp_client.get_status.return_value = {'ok': True}
+        tp_client.get_version.side_effect = requests.Timeout('slow')
+        response = client.get(f'/api/devices/{device_id}/device/snapshot')
+
+    assert response.status_code == 200
+    payload = response.json
+    assert payload['collapsed']['online'] is False
+    assert payload['expanded']['version']['error'] == (
+        'Could not reach this TinyPilot.'
+    )
+    tp_client.get_network_status.assert_not_called()
+    tp_client.get_video_settings.assert_not_called()
+    tp_client.get_automation_state.assert_not_called()
+    tp_client.get_latest_release.assert_not_called()
+    tp_client.get_update_status.assert_not_called()
