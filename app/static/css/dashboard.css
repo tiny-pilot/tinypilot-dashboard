@@ -294,6 +294,119 @@ button.button-danger-quiet:hover {
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-warning) 70%, transparent);
 }
 
+.connected-screenshot.connected-screenshot--offline {
+  filter: grayscale(1) brightness(0.85);
+  opacity: 0.85;
+}
+
+.preview-frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #0b1220;
+}
+
+.preview-offline-badge {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  z-index: 2;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #0b1220;
+  background: color-mix(in srgb, var(--color-warning) 85%, white);
+}
+
+.preview-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 1rem;
+  text-align: center;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
+
+.preview-placeholder--shimmer {
+  background: linear-gradient(
+    110deg,
+    #1a2233 25%,
+    #243049 37%,
+    #1a2233 63%
+  );
+  background-size: 200% 100%;
+  animation: preview-shimmer 1.4s ease-in-out infinite;
+}
+
+.preview-placeholder--offline {
+  background: #1a2233;
+  color: color-mix(in srgb, var(--color-text) 75%, transparent);
+}
+
+.preview-placeholder--no_signal {
+  background: #05070c;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+
+.preview-placeholder-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.preview-placeholder-detail {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.preview-monitor-icon {
+  width: 3rem;
+  height: 2.25rem;
+  opacity: 0.7;
+}
+
+@keyframes preview-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.replace-api-key-details {
+  margin-top: var(--space-3);
+}
+
+.replace-api-key-details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.actions-replace-api-key {
+  margin-top: var(--space-2);
+  align-items: center;
+}
+
+.replace-api-key-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .launch-link {
   color: var(--color-accent);
   text-decoration: none;

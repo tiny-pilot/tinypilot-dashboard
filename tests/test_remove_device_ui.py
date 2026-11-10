@@ -73,7 +73,7 @@ def test_device_card_keeps_cached_preview_copy():
     assert ' · ' not in app
     assert 'Could not capture a screenshot.' in source
     assert "kind === 'cached'" in source
-    assert '_primeCachedScreenshot' in source
+    assert '_primeFromCache' in source
 
 
 def test_tinypilot_device_heading_matches_target_system():
@@ -160,7 +160,7 @@ def test_screenshot_click_opens_device_webui():
     assert 'Open latest screenshot in new tab' not in source
     assert 'aria-label="Control ${escapeHtml(device.friendly_name)}"' in source
     assert 'href="/api/devices/${id}/latest-screenshot"' not in source
-    assert 'latest-screenshot' in source
+    assert 'latest-screenshot' not in source
     assert 'device.base_url' in source
     link = source.split('id="connected-screenshot-link-${id}"', 1)[1]
     link = link.split('>', 1)[0]

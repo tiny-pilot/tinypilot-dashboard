@@ -1,5 +1,12 @@
 import './components/device-card.js';
 import { formatRelativeTime } from './lib/strings.js';
+import { clearPreviewCache, PREVIEW_CACHE_NAME } from './lib/preview-cache.js';
+
+// Re-export for Cloud gateway sign-out (and any host page that clears previews).
+window.tinypilotPreviewCache = window.tinypilotPreviewCache || {
+  PREVIEW_CACHE_NAME,
+  clearPreviewCache,
+};
 
 const ADD_DEVICE_TOGGLE_LABEL = 'Add a device';
 const ADD_DEVICE_MODAL_LABEL = 'Add a TinyPilot device';
@@ -381,6 +388,13 @@ class DashboardApp extends HTMLElement {
       await card.refreshScreenshot(this._screenshotCapturedAtByDevice);
       return;
     }
+    if (action === 'replace-api-key') {
+      const replaced = await card.replaceApiKey();
+      if (replaced) {
+        await card.refreshScreenshot(this._screenshotCapturedAtByDevice);
+      }
+      return;
+    }
     if (action === 'save-screenshot-interval') {
       const input = card.querySelector(`#screenshot-interval-${deviceId}`);
       const interval = Number.parseInt(input?.value || '0', 10);
@@ -551,11 +565,6 @@ class DashboardApp extends HTMLElement {
       return;
     }
     this._allDevices = payload.devices;
-    for (const device of this._allDevices) {
-      if (device.latest_screenshot_captured_at) {
-        this._screenshotCapturedAtByDevice.set(String(device.id), device.latest_screenshot_captured_at);
-      }
-    }
     const totalPages = this._totalPages();
     this._currentPage = Math.min(this._currentPage, totalPages);
     this._renderCurrentPage();

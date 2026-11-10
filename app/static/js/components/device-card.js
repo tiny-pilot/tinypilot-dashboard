@@ -4,10 +4,18 @@ import {
   latestVersionFrom,
   updateBannerKind,
 } from '../lib/device-update.js';
+import { getPreview, putPreview } from '../lib/preview-cache.js';
 
 const AUTOMATION_LICENSE_INFO_URL = 'https://tinypilotkvm.com/pages/automation';
 const UPDATE_POLL_INTERVAL_MS = 3000;
 const UPDATE_POLL_MAX_ERRORS = 10;
+
+const MONITOR_SVG = `
+  <svg class="preview-monitor-icon" viewBox="0 0 64 48" aria-hidden="true">
+    <rect x="4" y="4" width="56" height="34" rx="3" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M22 44h20M32 38v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+`;
 
 function formatCollapsedSnapshotSummary(c) {
   const checkedAt = c.last_checked || '';
@@ -47,8 +55,8 @@ function cachedPreviewCopy(capturedAt) {
   return `Cached preview from ${formatRelativeTime(capturedAt)}.`;
 }
 
-function missingPreviewCopy() {
-  return 'Could not capture a screenshot.';
+function livePreviewCopy(capturedAt) {
+  return `Live preview, updated ${formatRelativeTime(capturedAt)}.`;
 }
 
 function setPreviewStatus(el, text, kind) {
@@ -58,7 +66,7 @@ function setPreviewStatus(el, text, kind) {
   el.textContent = text;
   el.classList.toggle(
     'connected-status--caution',
-    kind === 'cached' || kind === 'error',
+    kind === 'cached' || kind === 'error' || kind === 'offline' || kind === 'no_signal',
   );
   if (kind) {
     el.dataset.previewKind = kind;
@@ -85,6 +93,12 @@ class DeviceCard extends HTMLElement {
     this._elements = {};
     this._updatePollTimer = null;
     this._desiredUpdateVersion = null;
+    this._online = null;
+    this._lastChecked = '';
+    this._capturedAt = null;
+    this._hasCachedImage = false;
+    this._objectUrl = null;
+    this._previewState = 'loading';
   }
 
   set device(value) {
@@ -110,18 +124,31 @@ class DeviceCard extends HTMLElement {
 
   disconnectedCallback() {
     this._stopUpdatePoll();
+    this._revokeObjectUrl();
+  }
+
+  _revokeObjectUrl() {
+    if (this._objectUrl) {
+      URL.revokeObjectURL(this._objectUrl);
+      this._objectUrl = null;
+    }
   }
 
   _cacheElements() {
     const id = this._device.id;
     this._elements = {
+      frame: this.querySelector(`#preview-frame-${id}`),
       screenshot: this.querySelector(`#connected-screenshot-${id}`),
       link: this.querySelector(`#connected-screenshot-link-${id}`),
       connectedStatus: this.querySelector(`#connected-status-${id}`),
+      offlineBadge: this.querySelector(`#preview-offline-badge-${id}`),
+      placeholder: this.querySelector(`#preview-placeholder-${id}`),
       summaryOutput: this.querySelector(`#device-collapsed-summary-${id}`),
       metricsOutput: this.querySelector(`#device-metrics-output-${id}`),
       intervalInput: this.querySelector(`#screenshot-interval-${id}`),
       expandedDetails: this.querySelector(`#device-details-${id}`),
+      replaceKeyInput: this.querySelector(`#replace-api-key-${id}`),
+      replaceKeyStatus: this.querySelector(`#replace-api-key-status-${id}`),
     };
   }
 
@@ -157,11 +184,16 @@ class DeviceCard extends HTMLElement {
               aria-disabled="true"
               aria-label="Control ${escapeHtml(device.friendly_name)}"
             >
-              <img
-                id="connected-screenshot-${id}"
-                class="connected-screenshot"
-                alt="Latest screenshot for ${escapeHtml(device.friendly_name)}"
-              >
+              <div id="preview-frame-${id}" class="preview-frame preview-frame--loading">
+                <img
+                  id="connected-screenshot-${id}"
+                  class="connected-screenshot"
+                  alt="Latest screenshot for ${escapeHtml(device.friendly_name)}"
+                  hidden
+                >
+                <div id="preview-placeholder-${id}" class="preview-placeholder preview-placeholder--shimmer" aria-hidden="true"></div>
+                <span id="preview-offline-badge-${id}" class="preview-offline-badge" hidden>Offline</span>
+              </div>
             </a>
             <div class="actions actions-connected-primary">
               <button type="button" data-action="refresh-screenshot" data-device-id="${id}">Refresh screenshot</button>
@@ -199,31 +231,212 @@ class DeviceCard extends HTMLElement {
               <summary>Expanded TinyPilot device info</summary>
               <div id="device-metrics-output-${id}" class="metrics-output"></div>
             </details>
+            <details class="replace-api-key-details">
+              <summary>Replace API key</summary>
+              <p class="section-note">Create a key on the device under System → Automation, then paste it here.</p>
+              <div class="actions actions-replace-api-key">
+                <label class="sr-only" for="replace-api-key-${id}">New API key</label>
+                <input
+                  id="replace-api-key-${id}"
+                  class="replace-api-key-input"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="New API key"
+                >
+                <button type="button" data-action="replace-api-key" data-device-id="${id}">Save key</button>
+              </div>
+              <p id="replace-api-key-status-${id}" class="subtitle"></p>
+            </details>
           </div>
         </section>
       </section>
     `;
     this._cacheElements();
-    this._primeCachedScreenshot();
+    this._showLoadingPlaceholder();
+    void this._primeFromCache();
   }
 
-  _primeCachedScreenshot() {
-    const device = this._device;
-    if (!device?.latest_screenshot_captured_at) {
-      return;
+  _showLoadingPlaceholder() {
+    const { screenshot, placeholder, offlineBadge, frame } = this._elements;
+    if (screenshot) {
+      screenshot.hidden = true;
+      screenshot.removeAttribute('src');
+      screenshot.classList.remove(
+        'connected-screenshot--cached',
+        'connected-screenshot--offline',
+      );
     }
-    const { screenshot, link, connectedStatus } = this._elements;
+    if (placeholder) {
+      placeholder.hidden = false;
+      placeholder.className = 'preview-placeholder preview-placeholder--shimmer';
+      placeholder.innerHTML = '';
+    }
+    if (offlineBadge) {
+      offlineBadge.hidden = true;
+    }
+    if (frame) {
+      frame.className = 'preview-frame preview-frame--loading';
+    }
+    this._previewState = 'loading';
+  }
+
+  _showPanelPlaceholder(kind, title, detail) {
+    const { screenshot, placeholder, offlineBadge, frame, link } = this._elements;
+    this._revokeObjectUrl();
+    if (screenshot) {
+      screenshot.hidden = true;
+      screenshot.removeAttribute('src');
+      screenshot.classList.remove(
+        'connected-screenshot--cached',
+        'connected-screenshot--offline',
+      );
+    }
+    if (placeholder) {
+      placeholder.hidden = false;
+      placeholder.className = `preview-placeholder preview-placeholder--${kind}`;
+      placeholder.innerHTML = `
+        ${MONITOR_SVG}
+        <p class="preview-placeholder-title">${escapeHtml(title)}</p>
+        ${detail ? `<p class="preview-placeholder-detail">${escapeHtml(detail)}</p>` : ''}
+      `;
+    }
+    if (offlineBadge) {
+      offlineBadge.hidden = kind !== 'offline';
+    }
+    if (frame) {
+      frame.className = `preview-frame preview-frame--${kind}`;
+    }
+    deactivateScreenshotLink(link);
+    this._previewState = kind;
+  }
+
+  _showImage({ blobUrl, capturedAt, kind }) {
+    const { screenshot, placeholder, offlineBadge, frame, link } = this._elements;
     if (!screenshot) {
       return;
     }
-    const capturedAt = device.latest_screenshot_captured_at;
-    const busted = `/api/devices/${device.id}/latest-screenshot?t=${encodeURIComponent(capturedAt)}`;
-    screenshot.src = busted;
-    screenshot.classList.add('connected-screenshot--cached');
-    if (deviceLaunchHref(device)) {
+    screenshot.onerror = () => {
+      screenshot.hidden = true;
+      screenshot.removeAttribute('src');
+      if (this._online === false) {
+        this._showPanelPlaceholder(
+          'offline',
+          'Device offline',
+          this._lastChecked
+            ? `Last checked ${formatRelativeTime(this._lastChecked)}`
+            : '',
+        );
+        setPreviewStatus(
+          this._elements.connectedStatus,
+          this._lastChecked
+            ? `Last checked ${formatRelativeTime(this._lastChecked)}.`
+            : 'Device offline',
+          'offline',
+        );
+      } else {
+        this._showLoadingPlaceholder();
+      }
+    };
+    screenshot.hidden = false;
+    screenshot.src = blobUrl;
+    screenshot.classList.toggle('connected-screenshot--cached', kind === 'cached');
+    screenshot.classList.toggle('connected-screenshot--offline', kind === 'offline');
+    if (placeholder) {
+      placeholder.hidden = true;
+      placeholder.innerHTML = '';
+    }
+    if (offlineBadge) {
+      offlineBadge.hidden = kind !== 'offline';
+    }
+    if (frame) {
+      frame.className = `preview-frame preview-frame--${kind}`;
+    }
+    if (deviceLaunchHref(this._device)) {
       activateScreenshotLink(link);
     }
-    setPreviewStatus(connectedStatus, cachedPreviewCopy(capturedAt), 'cached');
+    this._capturedAt = capturedAt;
+    this._hasCachedImage = true;
+    this._previewState = kind;
+    if (kind === 'live') {
+      setPreviewStatus(
+        this._elements.connectedStatus,
+        livePreviewCopy(capturedAt),
+        'live',
+      );
+    } else if (kind === 'offline') {
+      setPreviewStatus(
+        this._elements.connectedStatus,
+        this._lastChecked
+          ? `Last seen ${formatRelativeTime(this._lastChecked)}.`
+          : 'Offline',
+        'offline',
+      );
+    } else {
+      setPreviewStatus(
+        this._elements.connectedStatus,
+        cachedPreviewCopy(capturedAt),
+        'cached',
+      );
+    }
+  }
+
+  async _primeFromCache() {
+    if (!this._device) {
+      return;
+    }
+    const cached = await getPreview(this._device.id);
+    if (!cached || !this.isConnected) {
+      return;
+    }
+    const blob = await cached.blob();
+    const capturedAt =
+      cached.headers.get('X-Captured-At') || new Date().toISOString();
+    this._revokeObjectUrl();
+    this._objectUrl = URL.createObjectURL(blob);
+    this._showImage({
+      blobUrl: this._objectUrl,
+      capturedAt,
+      kind: 'cached',
+    });
+  }
+
+  _syncPreviewState() {
+    if (this._previewState === 'no_signal' && this._online !== false) {
+      return;
+    }
+    if (this._online === false) {
+      if (this._hasCachedImage && this._objectUrl) {
+        this._showImage({
+          blobUrl: this._objectUrl,
+          capturedAt: this._capturedAt || new Date().toISOString(),
+          kind: 'offline',
+        });
+      } else if (!this._hasCachedImage) {
+        this._showPanelPlaceholder(
+          'offline',
+          'Device offline',
+          this._lastChecked
+            ? `Last checked ${formatRelativeTime(this._lastChecked)}`
+            : '',
+        );
+        setPreviewStatus(
+          this._elements.connectedStatus,
+          this._lastChecked
+            ? `Last checked ${formatRelativeTime(this._lastChecked)}.`
+            : 'Device offline',
+          'offline',
+        );
+      }
+      return;
+    }
+    if (this._previewState === 'offline' && this._hasCachedImage && this._objectUrl) {
+      this._showImage({
+        blobUrl: this._objectUrl,
+        capturedAt: this._capturedAt || new Date().toISOString(),
+        kind: 'cached',
+      });
+    }
   }
 
   async refreshScreenshot(capturedAtByDevice) {
@@ -231,78 +444,112 @@ class DeviceCard extends HTMLElement {
       return;
     }
     const id = this._device.id;
-    const { screenshot, link, connectedStatus } = this._elements;
-
-    // Do NOT clear screenshot.src here — keep showing the current frame
-    // until the replacement is ready to avoid a visible blank state.
+    const { link } = this._elements;
     deactivateScreenshotLink(link);
 
-    const result = await window.dashboardApi.postJson(`/api/devices/${id}/refresh-screenshot`);
-    const cachedAt =
-      capturedAtByDevice.get(String(id)) ||
-      this._device.latest_screenshot_captured_at;
-    const enableLaunch = () => {
-      if (deviceLaunchHref(this._device)) {
-        activateScreenshotLink(link);
-      }
-    };
+    if (!this._hasCachedImage) {
+      this._showLoadingPlaceholder();
+    }
 
-    if (result.error || !screenshot) {
-      if (cachedAt) {
-        screenshot?.classList.add('connected-screenshot--cached');
-        enableLaunch();
+    const result = await window.dashboardApi.postScreenshot(
+      `/api/devices/${id}/refresh-screenshot`,
+    );
+
+    if (result.code === 'no_signal') {
+      this._showPanelPlaceholder('no_signal', 'No signal from computer', '');
+      setPreviewStatus(
+        this._elements.connectedStatus,
+        'No signal from computer',
+        'no_signal',
+      );
+      return;
+    }
+
+    if (result.error || !result.blob) {
+      if (this._hasCachedImage && this._objectUrl) {
+        const kind = this._online === false ? 'offline' : 'cached';
+        this._showImage({
+          blobUrl: this._objectUrl,
+          capturedAt: this._capturedAt || new Date().toISOString(),
+          kind,
+        });
+      } else if (this._online === false) {
+        this._showPanelPlaceholder(
+          'offline',
+          'Device offline',
+          this._lastChecked
+            ? `Last checked ${formatRelativeTime(this._lastChecked)}`
+            : '',
+        );
         setPreviewStatus(
-          connectedStatus,
-          cachedPreviewCopy(cachedAt),
-          'cached',
+          this._elements.connectedStatus,
+          this._lastChecked
+            ? `Last checked ${formatRelativeTime(this._lastChecked)}.`
+            : 'Device offline',
+          'offline',
         );
       } else {
-        setPreviewStatus(connectedStatus, missingPreviewCopy(), 'error');
+        this._showLoadingPlaceholder();
+        setPreviewStatus(
+          this._elements.connectedStatus,
+          result.error || 'Could not capture a screenshot.',
+          'error',
+        );
       }
       return;
     }
 
-    capturedAtByDevice.set(String(id), result.captured_at || new Date().toISOString());
-    const busted = `/api/devices/${id}/latest-screenshot?t=${Date.now()}`;
-
-    const markLive = () => {
-      screenshot.classList.remove('connected-screenshot--cached');
-      enableLaunch();
-      setPreviewStatus(
-        connectedStatus,
-        `Live preview, updated ${formatRelativeTime(result.captured_at)}.`,
-        'live',
-      );
-    };
-
-    // Pre-load into an off-screen Image. Only swap the displayed <img> src
-    // after the browser has fully decoded the new frame so it never goes blank.
-    const preload = new Image();
-    preload.onload = () => {
-      screenshot.src = busted;
-      markLive();
-    };
-    preload.onerror = () => {
-      if (cachedAt) {
-        screenshot.classList.add('connected-screenshot--cached');
-        enableLaunch();
-        setPreviewStatus(
-          connectedStatus,
-          cachedPreviewCopy(cachedAt),
-          'cached',
-        );
-      } else {
-        setPreviewStatus(connectedStatus, missingPreviewCopy(), 'error');
-        deactivateScreenshotLink(link);
+    if (result.cacheCopy) {
+      try {
+        await putPreview(id, result.cacheCopy);
+      } catch {
+        // Cache Storage is best-effort; live image still shows.
       }
-    };
-    preload.src = busted;
-
-    // If already cached, onload may have fired synchronously — handle that case.
-    if (preload.complete && preload.naturalWidth > 0 && screenshot.src !== busted) {
-      screenshot.src = busted;
-      markLive();
     }
+
+    capturedAtByDevice.set(String(id), result.capturedAt);
+    this._revokeObjectUrl();
+    this._objectUrl = URL.createObjectURL(result.blob);
+    this._showImage({
+      blobUrl: this._objectUrl,
+      capturedAt: result.capturedAt,
+      kind: 'live',
+    });
+  }
+
+  async replaceApiKey() {
+    if (!this._device) {
+      return false;
+    }
+    const { replaceKeyInput, replaceKeyStatus } = this._elements;
+    const apiKey = (replaceKeyInput?.value || '').trim();
+    if (!apiKey) {
+      if (replaceKeyStatus) {
+        replaceKeyStatus.textContent = 'Enter a new API key.';
+      }
+      return false;
+    }
+    if (replaceKeyStatus) {
+      replaceKeyStatus.textContent = 'Saving…';
+    }
+    const result = await window.dashboardApi.putJson(
+      `/api/devices/${this._device.id}/api-key`,
+      { api_key: apiKey },
+    );
+    if (replaceKeyInput) {
+      replaceKeyInput.value = '';
+    }
+    if (result.error) {
+      if (replaceKeyStatus) {
+        replaceKeyStatus.textContent = result.error;
+      }
+      return false;
+    }
+    if (replaceKeyStatus) {
+      replaceKeyStatus.textContent = 'API key updated.';
+    }
+    await this.refreshSnapshot();
+    return true;
   }
 
   _setExpandedVisible(visible) {
@@ -326,6 +573,9 @@ class DeviceCard extends HTMLElement {
     const { summaryOutput, metricsOutput } = this._elements;
     const snapshot = await window.dashboardApi.getJson(`/api/devices/${id}/device/snapshot`);
     const online = Boolean(snapshot.collapsed?.online);
+    this._online = snapshot.error ? false : online;
+    this._lastChecked = snapshot.collapsed?.last_checked || '';
+    this._syncPreviewState();
 
     if (summaryOutput) {
       if (snapshot.error) {

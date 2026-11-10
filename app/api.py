@@ -1,7 +1,7 @@
 """HTTP API blueprint for the TinyPilot Dashboard.
 
 All routes live under the ``/api`` prefix and return JSON (except
-``/api/devices/<id>/latest-screenshot`` which streams an image). Database
+``/api/devices/<id>/refresh-screenshot`` which returns a JPEG). Database
 access goes through ``app.db.get_db``; secrets are read or written through
 ``app.auth_store`` so they are encrypted at rest.
 
@@ -16,10 +16,10 @@ from typing import Optional
 
 import requests
 from flask import Blueprint
+from flask import Response
 from flask import current_app
 from flask import jsonify
 from flask import request
-from flask import send_file
 
 from app.auth_store import decrypt_secret
 from app.auth_store import encrypt_secret
@@ -28,7 +28,6 @@ from app.device_update import can_start_update
 from app.device_update import update_available
 from app.resolution import connected_resolution_from_web_ui
 from app.resolution import resolution_from_automation_state
-from app.snapshot_service import write_latest_screenshot
 from app.tinypilot_client import TinyPilotClient
 
 api_blueprint = Blueprint('api', __name__, url_prefix='/api')
@@ -91,7 +90,6 @@ def list_devices():
             devices.id,
             devices.friendly_name,
             devices.base_url,
-            device_runtime_state.latest_screenshot_captured_at,
             device_runtime_state.screenshot_refresh_interval_minutes,
             CASE
                 WHEN device_auth.encrypted_automation_token IS NOT NULL THEN 1
@@ -108,7 +106,6 @@ def list_devices():
             'id': row['id'],
             'friendly_name': row['friendly_name'],
             'base_url': row['base_url'],
-            'latest_screenshot_captured_at': row['latest_screenshot_captured_at'],
             'screenshot_refresh_interval_minutes': row['screenshot_refresh_interval_minutes'] or 0,
             'api_key_configured': bool(row['api_key_configured']),
         }
@@ -224,36 +221,77 @@ def refresh_screenshot(device_id: int):
 
     try:
         screenshot = client.get_screenshot()
+    except ValueError as exc:
+        # TinyPilotClient raises ValueError for HTTP 204 / empty body (no signal).
+        current_app.logger.warning('TinyPilot screenshot no signal: %s', exc)
+        return jsonify({
+            'error': 'No signal from computer',
+            'code': 'no_signal',
+        }), 502
     except Exception as err:  # pylint: disable=broad-exception-caught
         return jsonify(
             {'error': f'failed to refresh screenshot: {_customer_error(err)}'}
         ), 502
 
-    db = get_db()
-    data_root = Path(current_app.config['DATABASE_PATH']).resolve().parent
-    screenshot_path = write_latest_screenshot(data_root / 'screenshots', device_id, screenshot)
     captured_at = datetime.now(timezone.utc).isoformat()
-    db.execute(
+    response = Response(screenshot, mimetype='image/jpeg')
+    response.headers['X-Captured-At'] = captured_at
+    return response
+
+
+@api_blueprint.put('/devices/<int:device_id>/api-key')
+def replace_api_key(device_id: int):
+    payload = request.get_json(silent=True) or {}
+    api_key = (payload.get('api_key') or '').strip()
+    if not api_key:
+        return jsonify({'error': 'api_key is required'}), 400
+
+    db = get_db()
+    existing = db.execute(
         """
-        UPDATE device_runtime_state
-        SET latest_screenshot_path = ?, latest_screenshot_captured_at = ?, latest_screenshot_error = NULL
+        SELECT id
+        FROM devices
+        WHERE id = ?
+        """,
+        (device_id,),
+    ).fetchone()
+    if existing is None:
+        return jsonify({'error': 'device not found'}), 404
+
+    key_path = Path(current_app.config['SECRET_KEY_PATH'])
+    encrypted = encrypt_secret(key_path, api_key)
+    now = datetime.now(timezone.utc).isoformat()
+    auth = db.execute(
+        """
+        SELECT device_id
+        FROM device_auth
         WHERE device_id = ?
         """,
-        (
-            str(screenshot_path),
-            captured_at,
-            device_id,
-        ),
-    )
+        (device_id,),
+    ).fetchone()
+    if auth is None:
+        db.execute(
+            """
+            INSERT INTO device_auth (
+                device_id,
+                encrypted_automation_token,
+                automation_token_refreshed_at
+            ) VALUES (?, ?, ?)
+            """,
+            (device_id, encrypted, now),
+        )
+    else:
+        db.execute(
+            """
+            UPDATE device_auth
+            SET encrypted_automation_token = ?,
+                automation_token_refreshed_at = ?
+            WHERE device_id = ?
+            """,
+            (encrypted, now, device_id),
+        )
     db.commit()
-    return jsonify(
-        {
-            'device_id': device_id,
-            'screenshot_refreshed': True,
-            'screenshot_path': str(screenshot_path),
-            'captured_at': captured_at,
-        }
-    )
+    return jsonify({'device_id': device_id, 'api_key_configured': True})
 
 
 @api_blueprint.post('/devices/<int:device_id>/screenshot-refresh-config')
@@ -292,35 +330,6 @@ def set_screenshot_refresh_config(device_id: int):
             'screenshot_refresh_interval_minutes': interval,
         }
     )
-
-
-@api_blueprint.get('/devices/<int:device_id>/latest-screenshot')
-def get_latest_screenshot(device_id: int):
-    row = get_db().execute(
-        """
-        SELECT latest_screenshot_path
-        FROM device_runtime_state
-        WHERE device_id = ?
-        """,
-        (device_id,),
-    ).fetchone()
-    if row is None or not row['latest_screenshot_path']:
-        return jsonify({'error': 'screenshot not available'}), 404
-
-    screenshot_path = Path(row['latest_screenshot_path']).resolve()
-    screenshots_root = (
-        Path(current_app.config['DATABASE_PATH']).resolve().parent / 'screenshots'
-    ).resolve()
-    # Defense-in-depth: the stored path is dashboard-controlled, but reject
-    # anything that resolves outside the screenshots directory so a tampered
-    # database row cannot expose arbitrary files via send_file.
-    try:
-        screenshot_path.relative_to(screenshots_root)
-    except ValueError:
-        return jsonify({'error': 'screenshot path is outside data directory'}), 404
-    if not screenshot_path.is_file():
-        return jsonify({'error': 'screenshot file missing'}), 404
-    return send_file(screenshot_path, mimetype='image/jpeg')
 
 
 def _safe_fetch(fetcher):
