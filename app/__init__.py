@@ -15,7 +15,7 @@ from app.db import init_db
 #   0.5.x          -> beta
 #   1.0.0          -> first stable release
 # Bump this on every customer-visible release.
-__version__ = '0.3.0'
+__version__ = '0.4.0'
 
 
 def create_app(test_config=None):

@@ -10,8 +10,8 @@ A self-hosted dashboard for monitoring and controlling multiple TinyPilot device
 
 ## What you get
 
-- One web UI that lists your TinyPilot devices, up to four per page, with a live screenshot of the connected system on each card.
-- One-click device addition (friendly name + TinyPilot URL + Automation API key).
+- One web UI that lists your TinyPilot devices, up to four per page, with a live preview of the connected system on each card (cached in the browser only).
+- One-click device addition (friendly name + TinyPilot URL + Automation API key), plus Replace API key on an existing card.
 - Per-device snapshot of TinyPilot status: connected display resolution, streaming mode (H.264 with bitrate, or MJPEG with framerate and quality), firmware version, network info, and more.
 - Encrypted at-rest storage for Automation API keys.
 
@@ -131,8 +131,11 @@ If none of those apply to your environment, please **do not run this alpha**.
 Everything persistent lives in `./data`:
 
 - `dashboard.sqlite` — devices and encrypted credentials.
-- `screenshots/` — latest screenshot per device.
 - `secret.key` — the encryption key for the SQLite secrets.
+
+Live previews are **not** stored on the server. The browser keeps the last image per device in Cache Storage (cache name `tinypilot-dashboard-previews-v1`). Clear it with `window.tinypilotPreviewCache.clearPreviewCache()` (for example on sign-out in a host that wraps this dashboard). Cache Storage requires a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts) (HTTPS or `http://localhost` / `http://127.0.0.1`). On plain `http://<lan-host>:8080`, the API is unavailable: live refresh still works, but cached and offline-with-image states do not persist across reloads.
+
+Schema migrations use SQLite `DROP COLUMN` (SQLite **3.35** or later). The Docker image is fine; bare-metal hosts on older SQLite need an upgrade before starting 0.4.0 against an existing DB.
 
 **To back up: copy the entire `data/` directory.** `secret.key` must be backed up alongside `dashboard.sqlite` — without it the encrypted columns cannot be recovered.
 
@@ -160,7 +163,7 @@ Source layout and conventions for anyone reading the code or auditing what the d
 - `templates/index.html` — Jinja shell that loads the `<dashboard-app>` web component and static assets.
 - `static/js/dashboard-app.js` — root custom element with shadow DOM: top bar, theme toggle, Add-a-device modal, paging (four devices per page), and a responsive device grid (1 → 2 → 4 columns).
 - `static/js/components/device-card.js` — one custom element per TinyPilot target. Owns the screenshot controls and the collapsed/expanded TinyPilot snapshot panel.
-- `static/js/lib/` — shared helpers (`strings.js`, `snapshot-view.js`).
+- `static/js/lib/` — shared helpers (`strings.js`, `snapshot-view.js`, `preview-cache.js`).
 - `static/js/api.js` — thin `fetch` wrappers attached to `window.dashboardApi`.
 
 **Backend** (`app/`)
@@ -170,7 +173,6 @@ Source layout and conventions for anyone reading the code or auditing what the d
 - `db.py` — SQLite connection helper and schema bootstrap.
 - `tinypilot_client.py` — HTTP client for TinyPilot Automation API-key routes.
 - `resolution.py` — normalizers for the various shapes TinyPilot uses to report "connected device resolution".
-- `snapshot_service.py` — atomic latest-screenshot writer.
 - `auth_store.py`, `crypto.py` — Fernet-encrypted at-rest secrets.
 
 ### TinyPilot APIs the dashboard uses

@@ -152,6 +152,7 @@ button.button-danger-quiet:hover {
 }
 
 .delete-device-actions,
+.replace-api-key-actions,
 .update-device-actions {
   margin-top: var(--space-2);
   align-items: center;
@@ -159,6 +160,7 @@ button.button-danger-quiet:hover {
 }
 
 .delete-device-actions button,
+.replace-api-key-actions button,
 .update-device-actions button {
   margin-top: 0;
   min-width: 0;
@@ -169,6 +171,7 @@ button.button-danger-quiet:hover {
 }
 
 .delete-device-actions #delete-device-cancel,
+.replace-api-key-actions #replace-api-key-cancel,
 .update-device-actions #update-device-cancel {
   background: transparent;
   color: var(--color-text);
@@ -294,6 +297,88 @@ button.button-danger-quiet:hover {
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-warning) 70%, transparent);
 }
 
+.connected-screenshot.connected-screenshot--offline {
+  filter: grayscale(1) brightness(0.85);
+  opacity: 0.85;
+}
+
+.preview-frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #0b1220;
+}
+
+.preview-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--color-muted);
+}
+
+/* Author `display: flex` otherwise overrides the hidden attribute and the
+   spinner stays painted over a successful live/cached <img>. */
+.preview-placeholder[hidden] {
+  display: none !important;
+}
+
+.preview-placeholder--loading {
+  background: #0b1220;
+}
+
+/* Offline (no image) and no-signal share the same dark empty well so the
+   centered label treatment matches; reachability is told by copy, not tint. */
+.preview-placeholder--offline,
+.preview-placeholder--no_signal {
+  background: #05070c;
+}
+
+/* Centered label over a dimmed cached frame (offline with image). */
+.preview-placeholder--overlay {
+  background: transparent;
+  pointer-events: none;
+}
+
+.preview-placeholder-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  color: var(--color-text);
+}
+
+.preview-placeholder-detail {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--color-muted);
+}
+
+/* Same shape as TinyPilot Pro's progress-spinner, muted for the preview well. */
+.preview-spinner {
+  width: 3rem;
+  height: 3rem;
+  border: 3px solid color-mix(in srgb, var(--color-muted) 35%, transparent);
+  border-top-color: color-mix(in srgb, var(--color-accent) 70%, var(--color-muted));
+  border-radius: 50%;
+  box-sizing: border-box;
+  animation: preview-spin 1.5s linear infinite;
+}
+
+@keyframes preview-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 .launch-link {
   color: var(--color-accent);
   text-decoration: none;
@@ -312,6 +397,19 @@ button.button-danger-quiet:hover {
 
 .subtitle {
   color: var(--color-muted);
+}
+
+/* Modal body copy: same font as other .subtitle text; loosen line breaks
+   from <br> and keep steady space above the form. */
+.modal-panel > .subtitle {
+  margin: 0 0 var(--space-3);
+  line-height: 1.5;
+}
+
+/* Status line under the form (Save / Remove result): only when it has text. */
+.modal-panel > form + .subtitle:not(:empty) {
+  margin-top: var(--space-3);
+  margin-bottom: 0;
 }
 
 .connected-system .subtitle {

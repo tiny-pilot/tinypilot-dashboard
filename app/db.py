@@ -12,6 +12,23 @@ from pathlib import Path
 from flask import current_app
 from flask import g
 
+# Columns removed in 0.4.0. Dropped on upgrade; omitted from CREATE for new DBs.
+_DROPPED_COLUMNS = (
+    ('devices', 'last_seen_at'),
+    ('devices', 'last_status'),
+    ('devices', 'role'),
+    ('device_auth', 'encrypted_automation_license_key'),
+    ('device_auth', 'encrypted_web_username'),
+    ('device_auth', 'encrypted_web_password'),
+    ('device_auth', 'encrypted_csrf_token'),
+    ('device_auth', 'csrf_refreshed_at'),
+    ('device_runtime_state', 'latest_screenshot_path'),
+    ('device_runtime_state', 'latest_screenshot_captured_at'),
+    ('device_runtime_state', 'latest_screenshot_error'),
+    ('device_runtime_state', 'last_connection_check_at'),
+    ('device_runtime_state', 'last_connection_check_error'),
+)
+
 
 def get_db() -> sqlite3.Connection:
     """Return the per-request SQLite connection, creating it on demand."""
@@ -38,32 +55,19 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             friendly_name TEXT NOT NULL,
             base_url TEXT NOT NULL,
-            software_version TEXT,
-            role TEXT,
-            last_seen_at TEXT,
-            last_status TEXT
+            software_version TEXT
         );
 
         CREATE TABLE IF NOT EXISTS device_auth (
             device_id INTEGER PRIMARY KEY,
-            encrypted_automation_license_key BLOB,
             encrypted_automation_token BLOB,
             automation_token_refreshed_at TEXT,
-            encrypted_web_username BLOB,
-            encrypted_web_password BLOB,
-            encrypted_csrf_token BLOB,
-            csrf_refreshed_at TEXT,
             FOREIGN KEY(device_id) REFERENCES devices(id)
         );
 
         CREATE TABLE IF NOT EXISTS device_runtime_state (
             device_id INTEGER PRIMARY KEY,
-            latest_screenshot_path TEXT,
-            latest_screenshot_captured_at TEXT,
-            latest_screenshot_error TEXT,
             screenshot_refresh_interval_minutes INTEGER NOT NULL DEFAULT 0,
-            last_connection_check_at TEXT,
-            last_connection_check_error TEXT,
             FOREIGN KEY(device_id) REFERENCES devices(id)
         );
         """
@@ -73,6 +77,11 @@ def init_db() -> None:
         table='device_runtime_state',
         column='screenshot_refresh_interval_minutes',
         column_def='INTEGER NOT NULL DEFAULT 0',
+    )
+    for table, column in _DROPPED_COLUMNS:
+        _drop_column_if_exists(db, table, column)
+    _delete_screenshot_files(
+        Path(current_app.config['DATABASE_PATH']).resolve().parent
     )
     db.commit()
 
@@ -101,3 +110,26 @@ def _ensure_column(
     if column in existing_names:
         return
     db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {column_def}')
+
+
+def _drop_column_if_exists(
+    db: sqlite3.Connection,
+    table: str,
+    column: str,
+) -> None:
+    """Drop ``column`` from ``table`` when present (SQLite 3.35+)."""
+    existing = db.execute(f'PRAGMA table_info({table})').fetchall()
+    existing_names = {row['name'] for row in existing}
+    if column not in existing_names:
+        return
+    db.execute(f'ALTER TABLE {table} DROP COLUMN {column}')
+
+
+def _delete_screenshot_files(data_root: Path) -> None:
+    """Remove leftover on-disk previews (plaintext or encrypted)."""
+    shots = data_root / 'screenshots'
+    if not shots.is_dir():
+        return
+    for path in shots.iterdir():
+        if path.is_file():
+            path.unlink()

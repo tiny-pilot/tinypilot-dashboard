@@ -29,6 +29,35 @@ def test_remove_device_uses_in_page_modal():
     assert 'window.confirm(' not in source
     assert 'window.prompt(' not in source
     assert 'button-danger-quiet' in source
+    delete_modal = source.split('id="delete-device-modal"', 1)[1]
+    delete_modal = delete_modal.split('id="replace-api-key-modal"', 1)[0]
+    assert 'Type REMOVE to remove this device from your Dashboard.' in delete_modal
+    assert 'add it again' not in delete_modal
+    assert 'from the device' not in delete_modal
+
+
+def test_replace_api_key_uses_in_page_modal_without_danger():
+    app = APP.read_text(encoding='utf-8')
+    assert 'replace-api-key-modal' in app
+    assert '_openReplaceApiKeyModal' in app
+    assert '_bindReplaceApiKeyForm' in app
+    assert 'REPLACE_API_KEY_MODAL_LABEL' in app
+    assert 'System → Automation' in app
+    modal = app.split('id="replace-api-key-modal"', 1)[1]
+    modal = modal.split('id="update-device-modal"', 1)[0]
+    assert 'button-danger-quiet' not in modal
+    assert 'type="password"' in modal
+    assert '>Save</button>' in modal
+    assert '>Cancel</button>' in modal
+    assert 'Create a key on the device under System → Automation,<br>then paste it here.' in modal
+    card = CARD.read_text(encoding='utf-8')
+    assert 'data-action="replace-api-key"' in card
+    assert 'replace-api-key-details' not in card
+    actions = card.split('class="actions"', 1)[1]
+    actions = actions.split('</div>', 1)[0]
+    assert 'Replace API key' in actions
+    assert 'Remove device' in actions
+    assert actions.index('Replace API key') < actions.index('Remove device')
 
 
 def test_device_card_open_webui_header_and_remove_label():
@@ -73,7 +102,7 @@ def test_device_card_keeps_cached_preview_copy():
     assert ' · ' not in app
     assert 'Could not capture a screenshot.' in source
     assert "kind === 'cached'" in source
-    assert '_primeCachedScreenshot' in source
+    assert '_primeFromCache' in source
 
 
 def test_tinypilot_device_heading_matches_target_system():
@@ -160,7 +189,7 @@ def test_screenshot_click_opens_device_webui():
     assert 'Open latest screenshot in new tab' not in source
     assert 'aria-label="Control ${escapeHtml(device.friendly_name)}"' in source
     assert 'href="/api/devices/${id}/latest-screenshot"' not in source
-    assert 'latest-screenshot' in source
+    assert 'latest-screenshot' not in source
     assert 'device.base_url' in source
     link = source.split('id="connected-screenshot-link-${id}"', 1)[1]
     link = link.split('>', 1)[0]
