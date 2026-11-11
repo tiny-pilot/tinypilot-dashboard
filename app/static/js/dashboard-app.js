@@ -83,7 +83,7 @@ class DashboardApp extends HTMLElement {
             <h2 id="delete-device-heading">${DELETE_DEVICE_MODAL_LABEL}</h2>
             <button type="button" class="modal-close" id="delete-device-modal-close" aria-label="Close">&times;</button>
           </header>
-          <p class="subtitle modal-instructions">Type REMOVE to remove this device from your Dashboard.</p>
+          <p class="subtitle">Type REMOVE to remove this device from your Dashboard.</p>
           <form id="delete-device-form" class="form-grid">
             <label>
               Confirmation
@@ -104,10 +104,7 @@ class DashboardApp extends HTMLElement {
             <h2 id="replace-api-key-heading">${REPLACE_API_KEY_MODAL_LABEL}</h2>
             <button type="button" class="modal-close" id="replace-api-key-modal-close" aria-label="Close">&times;</button>
           </header>
-          <div class="modal-instructions">
-            <p class="subtitle">Create a key on the device under System → Automation,</p>
-            <p class="subtitle">then paste it here.</p>
-          </div>
+          <p class="subtitle">Create a key on the device under System → Automation,<br>then paste it here.</p>
           <form id="replace-api-key-form" class="form-grid">
             <label>
               New API key
