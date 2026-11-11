@@ -1,7 +1,6 @@
 """Schema cleanup: drop unused columns and clear leftover screenshot files."""
 
 import sqlite3
-from pathlib import Path
 
 from app import create_app
 from app.db import get_db
