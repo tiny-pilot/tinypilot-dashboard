@@ -61,6 +61,21 @@ def test_replace_api_key_rejects_blank(client):
     assert response.status_code == 400
 
 
+def test_replace_api_key_rejects_non_string(client):
+    create = client.post('/api/devices', json={
+        'friendly_name': 'Rack',
+        'base_url': 'https://192.168.1.11',
+        'api_key': 'old-key',
+    })
+    device_id = create.json['device']['id']
+    response = client.put(
+        f'/api/devices/{device_id}/api-key',
+        json={'api_key': 12345},
+    )
+    assert response.status_code == 400
+    assert response.json['error'] == 'api_key is required'
+
+
 def test_replace_api_key_unknown_device(client):
     response = client.put('/api/devices/9999/api-key', json={'api_key': 'x'})
     assert response.status_code == 404

@@ -146,6 +146,46 @@ def test_refresh_screenshot_no_signal_code(client):
     assert response.json['error'] == 'No signal'
 
 
+def test_refresh_screenshot_other_value_error_is_not_no_signal(client):
+    create_payload = {
+        'friendly_name': 'Bad Value Device',
+        'base_url': 'https://192.168.1.53',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+
+    with patch('app.api.TinyPilotClient') as client_cls:
+        client_cls.return_value.get_screenshot.side_effect = ValueError(
+            'unexpected client failure',
+        )
+        response = client.post(f'/api/devices/{device_id}/refresh-screenshot')
+
+    assert response.status_code == 502
+    assert response.json.get('code') != 'no_signal'
+    assert 'failed to refresh screenshot' in response.json['error']
+
+
+def test_refresh_screenshot_request_exception_is_not_no_signal(client):
+    create_payload = {
+        'friendly_name': 'Bad URL Device',
+        'base_url': 'https://192.168.1.54',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+
+    with patch('app.api.TinyPilotClient') as client_cls:
+        client_cls.return_value.get_screenshot.side_effect = (
+            requests.exceptions.InvalidURL('No scheme supplied.')
+        )
+        response = client.post(f'/api/devices/{device_id}/refresh-screenshot')
+
+    assert response.status_code == 502
+    assert response.json.get('code') != 'no_signal'
+    assert 'failed to refresh screenshot' in response.json['error']
+
+
 def test_set_screenshot_refresh_interval_endpoint(client):
     create_payload = {
         'friendly_name': 'Interval Device',

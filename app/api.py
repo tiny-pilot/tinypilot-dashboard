@@ -221,8 +221,17 @@ def refresh_screenshot(device_id: int):
 
     try:
         screenshot = client.get_screenshot()
+    except requests.RequestException as err:
+        # requests.*Error subclasses often also inherit ValueError; handle first.
+        return jsonify(
+            {'error': f'failed to refresh screenshot: {_customer_error(err)}'}
+        ), 502
     except ValueError as exc:
-        # TinyPilotClient raises ValueError for HTTP 204 / empty body (no signal).
+        # TinyPilotClient raises ValueError only for HTTP 204 / empty body.
+        if 'no screenshot image' not in str(exc):
+            return jsonify(
+                {'error': f'failed to refresh screenshot: {_customer_error(exc)}'}
+            ), 502
         current_app.logger.warning('TinyPilot screenshot no signal: %s', exc)
         return jsonify({
             'error': 'No signal',
@@ -242,7 +251,10 @@ def refresh_screenshot(device_id: int):
 @api_blueprint.put('/devices/<int:device_id>/api-key')
 def replace_api_key(device_id: int):
     payload = request.get_json(silent=True) or {}
-    api_key = (payload.get('api_key') or '').strip()
+    raw_key = payload.get('api_key')
+    if not isinstance(raw_key, str):
+        return jsonify({'error': 'api_key is required'}), 400
+    api_key = raw_key.strip()
     if not api_key:
         return jsonify({'error': 'api_key is required'}), 400
 
@@ -261,35 +273,19 @@ def replace_api_key(device_id: int):
     key_path = Path(current_app.config['SECRET_KEY_PATH'])
     encrypted = encrypt_secret(key_path, api_key)
     now = datetime.now(timezone.utc).isoformat()
-    auth = db.execute(
+    db.execute(
         """
-        SELECT device_id
-        FROM device_auth
-        WHERE device_id = ?
+        INSERT INTO device_auth (
+            device_id,
+            encrypted_automation_token,
+            automation_token_refreshed_at
+        ) VALUES (?, ?, ?)
+        ON CONFLICT(device_id) DO UPDATE SET
+            encrypted_automation_token = excluded.encrypted_automation_token,
+            automation_token_refreshed_at = excluded.automation_token_refreshed_at
         """,
-        (device_id,),
-    ).fetchone()
-    if auth is None:
-        db.execute(
-            """
-            INSERT INTO device_auth (
-                device_id,
-                encrypted_automation_token,
-                automation_token_refreshed_at
-            ) VALUES (?, ?, ?)
-            """,
-            (device_id, encrypted, now),
-        )
-    else:
-        db.execute(
-            """
-            UPDATE device_auth
-            SET encrypted_automation_token = ?,
-                automation_token_refreshed_at = ?
-            WHERE device_id = ?
-            """,
-            (encrypted, now, device_id),
-        )
+        (device_id, encrypted, now),
+    )
     db.commit()
     return jsonify({'device_id': device_id, 'api_key_configured': True})
 

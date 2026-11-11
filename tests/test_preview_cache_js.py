@@ -26,15 +26,13 @@ def test_device_card_preview_state_labels():
     assert 'Cached preview from' in source
     assert 'Live preview, updated' in source
     assert 'No signal' in source
-    assert 'No signal from computer' not in source
     assert 'checkedStatusCopy' in source
     assert "_showCenteredLabel('Offline')" in source
-    assert 'Device offline' not in source
+    assert '_showOfflineEmpty' in source
+    assert '_hasCachedImage' not in source
     assert 'preview-placeholder--loading' in source
     assert 'preview-placeholder--overlay' in source
     assert 'preview-spinner' in source
-    assert 'preview-monitor-icon' not in source
-    assert 'preview-offline-badge' not in source
     assert 'latest-screenshot' not in source
     assert '_primeFromCache' in source
     assert 'data-action="replace-api-key"' in source
@@ -46,6 +44,7 @@ def test_dashboard_polls_visible_snapshots_every_five_minutes():
     assert 'DEVICE_SNAPSHOT_REFRESH_INTERVAL_MS = 5 * 60 * 1000' in app
     assert '_refreshVisibleDeviceSnapshots' in app
     assert '_scheduleSnapshotAutoRefresh' in app
+    assert 'window.tinypilotPreviewCache =' not in app
 
 
 def test_preview_placeholder_hidden_overrides_flex_display():
@@ -53,6 +52,5 @@ def test_preview_placeholder_hidden_overrides_flex_display():
     assert '.preview-placeholder[hidden]' in css
     assert 'display: none !important' in css
     assert 'preview-spinner' in css
-    assert 'preview-shimmer' not in css
     assert '.preview-placeholder--offline' in css
     assert '.preview-placeholder--no_signal' in css

@@ -97,7 +97,6 @@ class DeviceCard extends HTMLElement {
     this._online = null;
     this._lastChecked = '';
     this._capturedAt = null;
-    this._hasCachedImage = false;
     this._objectUrl = null;
     this._previewState = 'loading';
   }
@@ -307,14 +306,7 @@ class DeviceCard extends HTMLElement {
       screenshot.hidden = true;
       screenshot.removeAttribute('src');
       if (this._online === false) {
-        const checkedAt = this._lastChecked || new Date().toISOString();
-        this._showPanelPlaceholder('offline', 'Offline', '');
-        setPreviewStatus(
-          this._elements.connectedStatus,
-          checkedStatusCopy('Offline', checkedAt),
-          'offline',
-          checkedAt,
-        );
+        this._showOfflineEmpty();
       } else {
         this._showLoadingPlaceholder();
       }
@@ -338,7 +330,6 @@ class DeviceCard extends HTMLElement {
       deactivateScreenshotLink(link);
     }
     this._capturedAt = capturedAt;
-    this._hasCachedImage = true;
     this._previewState = kind;
     if (kind === 'live') {
       setPreviewStatus(
@@ -385,30 +376,34 @@ class DeviceCard extends HTMLElement {
     });
   }
 
+  _showOfflineEmpty(checkedAt) {
+    const at = checkedAt || this._lastChecked || new Date().toISOString();
+    this._showPanelPlaceholder('offline', 'Offline', '');
+    setPreviewStatus(
+      this._elements.connectedStatus,
+      checkedStatusCopy('Offline', at),
+      'offline',
+      at,
+    );
+  }
+
   _syncPreviewState() {
     if (this._previewState === 'no_signal' && this._online !== false) {
       return;
     }
     if (this._online === false) {
-      if (this._hasCachedImage && this._objectUrl) {
+      if (this._objectUrl) {
         this._showImage({
           blobUrl: this._objectUrl,
           capturedAt: this._capturedAt || new Date().toISOString(),
           kind: 'offline',
         });
-      } else if (!this._hasCachedImage) {
-        const checkedAt = this._lastChecked || new Date().toISOString();
-        this._showPanelPlaceholder('offline', 'Offline', '');
-        setPreviewStatus(
-          this._elements.connectedStatus,
-          checkedStatusCopy('Offline', checkedAt),
-          'offline',
-          checkedAt,
-        );
+      } else {
+        this._showOfflineEmpty();
       }
       return;
     }
-    if (this._previewState === 'offline' && this._hasCachedImage && this._objectUrl) {
+    if (this._previewState === 'offline' && this._objectUrl) {
       this._showImage({
         blobUrl: this._objectUrl,
         capturedAt: this._capturedAt || new Date().toISOString(),
@@ -425,7 +420,7 @@ class DeviceCard extends HTMLElement {
     const { link } = this._elements;
     deactivateScreenshotLink(link);
 
-    if (!this._hasCachedImage) {
+    if (!this._objectUrl) {
       this._showLoadingPlaceholder();
     }
 
@@ -446,7 +441,7 @@ class DeviceCard extends HTMLElement {
     }
 
     if (result.error || !result.blob) {
-      if (this._hasCachedImage && this._objectUrl) {
+      if (this._objectUrl) {
         const kind = this._online === false ? 'offline' : 'cached';
         this._showImage({
           blobUrl: this._objectUrl,
@@ -454,14 +449,7 @@ class DeviceCard extends HTMLElement {
           kind,
         });
       } else if (this._online === false) {
-        const checkedAt = this._lastChecked || new Date().toISOString();
-        this._showPanelPlaceholder('offline', 'Offline', '');
-        setPreviewStatus(
-          this._elements.connectedStatus,
-          checkedStatusCopy('Offline', checkedAt),
-          'offline',
-          checkedAt,
-        );
+        this._showOfflineEmpty();
       } else {
         const checkedAt = new Date().toISOString();
         this._showLoadingPlaceholder();

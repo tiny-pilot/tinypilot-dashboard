@@ -133,7 +133,9 @@ Everything persistent lives in `./data`:
 - `dashboard.sqlite` — devices and encrypted credentials.
 - `secret.key` — the encryption key for the SQLite secrets.
 
-Live previews are **not** stored on the server. The browser keeps the last image per device in Cache Storage (cache name `tinypilot-dashboard-previews-v1`). Clear it with `window.tinypilotPreviewCache.clearPreviewCache()` (for example on sign-out in a host that wraps this dashboard).
+Live previews are **not** stored on the server. The browser keeps the last image per device in Cache Storage (cache name `tinypilot-dashboard-previews-v1`). Clear it with `window.tinypilotPreviewCache.clearPreviewCache()` (for example on sign-out in a host that wraps this dashboard). Cache Storage requires a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts) (HTTPS or `http://localhost` / `http://127.0.0.1`). On plain `http://<lan-host>:8080`, the API is unavailable: live refresh still works, but cached and offline-with-image states do not persist across reloads.
+
+Schema migrations use SQLite `DROP COLUMN` (SQLite **3.35** or later). The Docker image is fine; bare-metal hosts on older SQLite need an upgrade before starting 0.4.0 against an existing DB.
 
 **To back up: copy the entire `data/` directory.** `secret.key` must be backed up alongside `dashboard.sqlite` — without it the encrypted columns cannot be recovered.
 

@@ -1,12 +1,6 @@
 import './components/device-card.js';
 import { formatRelativeTime } from './lib/strings.js';
-import { clearPreviewCache, PREVIEW_CACHE_NAME } from './lib/preview-cache.js';
-
-// Re-export for Cloud gateway sign-out (and any host page that clears previews).
-window.tinypilotPreviewCache = window.tinypilotPreviewCache || {
-  PREVIEW_CACHE_NAME,
-  clearPreviewCache,
-};
+// preview-cache.js (imported via device-card) sets window.tinypilotPreviewCache.
 
 const ADD_DEVICE_TOGGLE_LABEL = 'Add a device';
 const ADD_DEVICE_MODAL_LABEL = 'Add a TinyPilot device';
