@@ -330,10 +330,9 @@ button.button-danger-quiet:hover {
   background: #0b1220;
 }
 
-.preview-placeholder--offline {
-  background: #1a2233;
-}
-
+/* Offline (no image) and no-signal share the same dark empty well so the
+   centered label treatment matches; reachability is told by copy, not tint. */
+.preview-placeholder--offline,
 .preview-placeholder--no_signal {
   background: #05070c;
 }

@@ -52,19 +52,27 @@ function livePreviewCopy(capturedAt) {
   return `Live preview, updated ${formatRelativeTime(capturedAt)}.`;
 }
 
-function setPreviewStatus(el, text, kind) {
+function checkedStatusCopy(label, checkedAt) {
+  const at = checkedAt || new Date().toISOString();
+  return `${label}, checked ${formatRelativeTime(at)}.`;
+}
+
+function setPreviewStatus(el, text, kind, checkedAt) {
   if (!el) {
     return;
   }
   el.textContent = text;
-  el.classList.toggle(
-    'connected-status--caution',
-    kind === 'cached' || kind === 'error' || kind === 'offline',
-  );
+  // Live stays muted; every other preview status uses the caution (yellow) style.
+  el.classList.toggle('connected-status--caution', Boolean(kind) && kind !== 'live');
   if (kind) {
     el.dataset.previewKind = kind;
   } else {
     delete el.dataset.previewKind;
+  }
+  if (checkedAt) {
+    el.dataset.checkedAt = checkedAt;
+  } else {
+    delete el.dataset.checkedAt;
   }
 }
 
@@ -317,19 +325,13 @@ class DeviceCard extends HTMLElement {
       screenshot.hidden = true;
       screenshot.removeAttribute('src');
       if (this._online === false) {
-        this._showPanelPlaceholder(
-          'offline',
-          'Offline',
-          this._lastChecked
-            ? `Last checked ${formatRelativeTime(this._lastChecked)}`
-            : '',
-        );
+        const checkedAt = this._lastChecked || new Date().toISOString();
+        this._showPanelPlaceholder('offline', 'Offline', '');
         setPreviewStatus(
           this._elements.connectedStatus,
-          this._lastChecked
-            ? `Last checked ${formatRelativeTime(this._lastChecked)}.`
-            : 'Offline',
+          checkedStatusCopy('Offline', checkedAt),
           'offline',
+          checkedAt,
         );
       } else {
         this._showLoadingPlaceholder();
@@ -361,20 +363,22 @@ class DeviceCard extends HTMLElement {
         this._elements.connectedStatus,
         livePreviewCopy(capturedAt),
         'live',
+        capturedAt,
       );
     } else if (kind === 'offline') {
+      const checkedAt = this._lastChecked || capturedAt || new Date().toISOString();
       setPreviewStatus(
         this._elements.connectedStatus,
-        this._lastChecked
-          ? `Last seen ${formatRelativeTime(this._lastChecked)}.`
-          : 'Offline',
+        checkedStatusCopy('Offline', checkedAt),
         'offline',
+        checkedAt,
       );
     } else {
       setPreviewStatus(
         this._elements.connectedStatus,
         cachedPreviewCopy(capturedAt),
         'cached',
+        capturedAt,
       );
     }
   }
@@ -411,19 +415,13 @@ class DeviceCard extends HTMLElement {
           kind: 'offline',
         });
       } else if (!this._hasCachedImage) {
-        this._showPanelPlaceholder(
-          'offline',
-          'Offline',
-          this._lastChecked
-            ? `Last checked ${formatRelativeTime(this._lastChecked)}`
-            : '',
-        );
+        const checkedAt = this._lastChecked || new Date().toISOString();
+        this._showPanelPlaceholder('offline', 'Offline', '');
         setPreviewStatus(
           this._elements.connectedStatus,
-          this._lastChecked
-            ? `Last checked ${formatRelativeTime(this._lastChecked)}.`
-            : 'Offline',
+          checkedStatusCopy('Offline', checkedAt),
           'offline',
+          checkedAt,
         );
       }
       return;
@@ -454,11 +452,13 @@ class DeviceCard extends HTMLElement {
     );
 
     if (result.code === 'no_signal') {
+      const checkedAt = this._lastChecked || new Date().toISOString();
       this._showPanelPlaceholder('no_signal', 'No signal', '');
       setPreviewStatus(
         this._elements.connectedStatus,
-        'No signal',
+        checkedStatusCopy('No signal', checkedAt),
         'no_signal',
+        checkedAt,
       );
       return;
     }
@@ -472,26 +472,22 @@ class DeviceCard extends HTMLElement {
           kind,
         });
       } else if (this._online === false) {
-        this._showPanelPlaceholder(
-          'offline',
-          'Offline',
-          this._lastChecked
-            ? `Last checked ${formatRelativeTime(this._lastChecked)}`
-            : '',
-        );
+        const checkedAt = this._lastChecked || new Date().toISOString();
+        this._showPanelPlaceholder('offline', 'Offline', '');
         setPreviewStatus(
           this._elements.connectedStatus,
-          this._lastChecked
-            ? `Last checked ${formatRelativeTime(this._lastChecked)}.`
-            : 'Offline',
+          checkedStatusCopy('Offline', checkedAt),
           'offline',
+          checkedAt,
         );
       } else {
+        const checkedAt = new Date().toISOString();
         this._showLoadingPlaceholder();
         setPreviewStatus(
           this._elements.connectedStatus,
           result.error || 'Could not capture a screenshot.',
           'error',
+          checkedAt,
         );
       }
       return;

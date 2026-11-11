@@ -15,6 +15,7 @@ const DELETE_DEVICE_MODAL_LABEL = 'Remove device';
 const UPDATE_DEVICE_MODAL_LABEL = 'Update TinyPilot';
 const DEVICES_PER_PAGE = 4;
 const CONNECTED_STATUS_REFRESH_INTERVAL_MS = 30_000;
+const DEVICE_SNAPSHOT_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 class DashboardApp extends HTMLElement {
   constructor() {
@@ -26,6 +27,7 @@ class DashboardApp extends HTMLElement {
     this._pendingUpdateCard = null;
     this._screenshotAutoRefreshTimers = new Map();
     this._screenshotCapturedAtByDevice = new Map();
+    this._snapshotAutoRefreshTimer = null;
   }
 
   connectedCallback() {
@@ -136,6 +138,7 @@ class DashboardApp extends HTMLElement {
     this._bind();
     void this._refreshDeviceList();
     window.setInterval(() => this._refreshConnectedStatusTimes(), CONNECTED_STATUS_REFRESH_INTERVAL_MS);
+    this._scheduleSnapshotAutoRefresh();
   }
 
   _bind() {
@@ -512,6 +515,27 @@ class DashboardApp extends HTMLElement {
     }
   }
 
+  _scheduleSnapshotAutoRefresh() {
+    if (this._snapshotAutoRefreshTimer) {
+      window.clearInterval(this._snapshotAutoRefreshTimer);
+    }
+    this._snapshotAutoRefreshTimer = window.setInterval(() => {
+      void this._refreshVisibleDeviceSnapshots();
+    }, DEVICE_SNAPSHOT_REFRESH_INTERVAL_MS);
+  }
+
+  async _refreshVisibleDeviceSnapshots() {
+    const visibleDevices = this._getVisibleDevices();
+    await Promise.allSettled(
+      visibleDevices.map(async (device) => {
+        const card = this._deviceCard(String(device.id));
+        if (card) {
+          await card.refreshSnapshot();
+        }
+      }),
+    );
+  }
+
   _renderCurrentPage() {
     const visibleDevices = this._getVisibleDevices();
     this._renderDeviceSections(visibleDevices);
@@ -520,17 +544,27 @@ class DashboardApp extends HTMLElement {
   }
 
   _refreshConnectedStatusTimes() {
-    for (const [deviceId, capturedAt] of this._screenshotCapturedAtByDevice.entries()) {
-      const card = this._deviceCard(deviceId);
-      const connectedStatus = card?.querySelector(`#connected-status-${deviceId}`);
+    for (const card of this._elements.deviceSections.querySelectorAll('device-card')) {
+      const deviceId = card.dataset.deviceId;
+      const connectedStatus = card.querySelector(`#connected-status-${deviceId}`);
       if (!connectedStatus) {
         continue;
       }
       const kind = connectedStatus.dataset.previewKind;
+      const checkedAt =
+        connectedStatus.dataset.checkedAt
+        || this._screenshotCapturedAtByDevice.get(String(deviceId));
+      if (!checkedAt) {
+        continue;
+      }
       if (kind === 'cached') {
-        connectedStatus.textContent = `Cached preview from ${formatRelativeTime(capturedAt)}.`;
+        connectedStatus.textContent = `Cached preview from ${formatRelativeTime(checkedAt)}.`;
       } else if (kind === 'live') {
-        connectedStatus.textContent = `Live preview, updated ${formatRelativeTime(capturedAt)}.`;
+        connectedStatus.textContent = `Live preview, updated ${formatRelativeTime(checkedAt)}.`;
+      } else if (kind === 'offline') {
+        connectedStatus.textContent = `Offline, checked ${formatRelativeTime(checkedAt)}.`;
+      } else if (kind === 'no_signal') {
+        connectedStatus.textContent = `No signal, checked ${formatRelativeTime(checkedAt)}.`;
       }
     }
     // Relative "checked … ago" is baked in at snapshot time; refresh the
