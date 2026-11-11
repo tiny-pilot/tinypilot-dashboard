@@ -326,60 +326,60 @@ button.button-danger-quiet:hover {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding: 1rem;
+  gap: var(--space-2);
+  padding: var(--space-4);
   text-align: center;
-  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+  color: var(--color-muted);
 }
 
 /* Author `display: flex` otherwise overrides the hidden attribute and the
-   shimmer stays painted over a successful live/cached <img>. */
+   spinner stays painted over a successful live/cached <img>. */
 .preview-placeholder[hidden] {
   display: none !important;
 }
 
-.preview-placeholder--shimmer {
-  background: linear-gradient(
-    110deg,
-    #1a2233 25%,
-    #243049 37%,
-    #1a2233 63%
-  );
-  background-size: 200% 100%;
-  animation: preview-shimmer 1.4s ease-in-out infinite;
+.preview-placeholder--loading {
+  background: #0b1220;
 }
 
 .preview-placeholder--offline {
   background: #1a2233;
-  color: color-mix(in srgb, var(--color-text) 75%, transparent);
 }
 
 .preview-placeholder--no_signal {
   background: #05070c;
-  color: color-mix(in srgb, var(--color-text) 80%, transparent);
 }
 
 .preview-placeholder-title {
   margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--color-muted);
 }
 
 .preview-placeholder-detail {
   margin: 0;
-  font-size: 0.8rem;
-  opacity: 0.85;
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--color-muted);
 }
 
-.preview-monitor-icon {
-  width: 3rem;
-  height: 2.25rem;
-  opacity: 0.7;
+/* Same shape as TinyPilot Pro's progress-spinner, muted for the preview well. */
+.preview-spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 3px solid color-mix(in srgb, var(--color-muted) 28%, transparent);
+  border-top-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-muted));
+  border-radius: 50%;
+  box-sizing: border-box;
+  animation: preview-spin 1.5s linear infinite;
 }
 
-@keyframes preview-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+@keyframes preview-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .replace-api-key-details {

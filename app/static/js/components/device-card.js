@@ -10,13 +10,6 @@ const AUTOMATION_LICENSE_INFO_URL = 'https://tinypilotkvm.com/pages/automation';
 const UPDATE_POLL_INTERVAL_MS = 3000;
 const UPDATE_POLL_MAX_ERRORS = 10;
 
-const MONITOR_SVG = `
-  <svg class="preview-monitor-icon" viewBox="0 0 64 48" aria-hidden="true">
-    <rect x="4" y="4" width="56" height="34" rx="3" fill="none" stroke="currentColor" stroke-width="2"/>
-    <path d="M22 44h20M32 38v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-  </svg>
-`;
-
 function formatCollapsedSnapshotSummary(c) {
   const checkedAt = c.last_checked || '';
   const checkedText = formatRelativeTime(checkedAt);
@@ -66,7 +59,7 @@ function setPreviewStatus(el, text, kind) {
   el.textContent = text;
   el.classList.toggle(
     'connected-status--caution',
-    kind === 'cached' || kind === 'error' || kind === 'offline' || kind === 'no_signal',
+    kind === 'cached' || kind === 'error' || kind === 'offline',
   );
   if (kind) {
     el.dataset.previewKind = kind;
@@ -191,7 +184,9 @@ class DeviceCard extends HTMLElement {
                   alt="Latest screenshot for ${escapeHtml(device.friendly_name)}"
                   hidden
                 >
-                <div id="preview-placeholder-${id}" class="preview-placeholder preview-placeholder--shimmer" aria-hidden="true"></div>
+                <div id="preview-placeholder-${id}" class="preview-placeholder preview-placeholder--loading" aria-hidden="true">
+                  <div class="preview-spinner" aria-hidden="true"></div>
+                </div>
                 <span id="preview-offline-badge-${id}" class="preview-offline-badge" hidden>Offline</span>
               </div>
             </a>
@@ -269,8 +264,8 @@ class DeviceCard extends HTMLElement {
     }
     if (placeholder) {
       placeholder.hidden = false;
-      placeholder.className = 'preview-placeholder preview-placeholder--shimmer';
-      placeholder.innerHTML = '';
+      placeholder.className = 'preview-placeholder preview-placeholder--loading';
+      placeholder.innerHTML = '<div class="preview-spinner" aria-hidden="true"></div>';
     }
     if (offlineBadge) {
       offlineBadge.hidden = true;
@@ -296,7 +291,6 @@ class DeviceCard extends HTMLElement {
       placeholder.hidden = false;
       placeholder.className = `preview-placeholder preview-placeholder--${kind}`;
       placeholder.innerHTML = `
-        ${MONITOR_SVG}
         <p class="preview-placeholder-title">${escapeHtml(title)}</p>
         ${detail ? `<p class="preview-placeholder-detail">${escapeHtml(detail)}</p>` : ''}
       `;
@@ -456,10 +450,10 @@ class DeviceCard extends HTMLElement {
     );
 
     if (result.code === 'no_signal') {
-      this._showPanelPlaceholder('no_signal', 'No signal from computer', '');
+      this._showPanelPlaceholder('no_signal', 'No signal', '');
       setPreviewStatus(
         this._elements.connectedStatus,
-        'No signal from computer',
+        'No signal',
         'no_signal',
       );
       return;

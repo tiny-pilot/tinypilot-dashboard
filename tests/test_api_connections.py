@@ -143,7 +143,7 @@ def test_refresh_screenshot_no_signal_code(client):
 
     assert response.status_code == 502
     assert response.json['code'] == 'no_signal'
-    assert response.json['error'] == 'No signal from computer'
+    assert response.json['error'] == 'No signal'
 
 
 def test_set_screenshot_refresh_interval_endpoint(client):

@@ -225,7 +225,7 @@ def refresh_screenshot(device_id: int):
         # TinyPilotClient raises ValueError for HTTP 204 / empty body (no signal).
         current_app.logger.warning('TinyPilot screenshot no signal: %s', exc)
         return jsonify({
-            'error': 'No signal from computer',
+            'error': 'No signal',
             'code': 'no_signal',
         }), 502
     except Exception as err:  # pylint: disable=broad-exception-caught

@@ -25,9 +25,12 @@ def test_device_card_preview_state_labels():
     source = CARD.read_text(encoding='utf-8')
     assert 'Cached preview from' in source
     assert 'Live preview, updated' in source
-    assert 'No signal from computer' in source
+    assert 'No signal' in source
+    assert 'No signal from computer' not in source
     assert 'Device offline' in source
-    assert 'preview-placeholder--shimmer' in source
+    assert 'preview-placeholder--loading' in source
+    assert 'preview-spinner' in source
+    assert 'preview-monitor-icon' not in source
     assert 'latest-screenshot' not in source
     assert '_primeFromCache' in source
     assert 'Replace API key' in source
@@ -37,3 +40,5 @@ def test_preview_placeholder_hidden_overrides_flex_display():
     css = (ROOT / 'app/static/css/dashboard.css').read_text(encoding='utf-8')
     assert '.preview-placeholder[hidden]' in css
     assert 'display: none !important' in css
+    assert 'preview-spinner' in css
+    assert 'preview-shimmer' not in css
