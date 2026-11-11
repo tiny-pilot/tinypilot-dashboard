@@ -37,7 +37,7 @@ def test_device_card_preview_state_labels():
     assert 'preview-offline-badge' not in source
     assert 'latest-screenshot' not in source
     assert '_primeFromCache' in source
-    assert 'Replace API key' in source
+    assert 'data-action="replace-api-key"' in source
     assert "kind !== 'live'" in source
 
 

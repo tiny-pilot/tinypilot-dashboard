@@ -152,6 +152,7 @@ button.button-danger-quiet:hover {
 }
 
 .delete-device-actions,
+.replace-api-key-actions,
 .update-device-actions {
   margin-top: var(--space-2);
   align-items: center;
@@ -159,6 +160,7 @@ button.button-danger-quiet:hover {
 }
 
 .delete-device-actions button,
+.replace-api-key-actions button,
 .update-device-actions button {
   margin-top: 0;
   min-width: 0;
@@ -169,6 +171,7 @@ button.button-danger-quiet:hover {
 }
 
 .delete-device-actions #delete-device-cancel,
+.replace-api-key-actions #replace-api-key-cancel,
 .update-device-actions #update-device-cancel {
   background: transparent;
   color: var(--color-text);
@@ -374,37 +377,6 @@ button.button-danger-quiet:hover {
 @keyframes preview-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
-}
-
-.replace-api-key-details {
-  margin-top: var(--space-3);
-}
-
-.replace-api-key-details summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.actions-replace-api-key {
-  margin-top: var(--space-2);
-  align-items: center;
-}
-
-.replace-api-key-input {
-  flex: 1 1 12rem;
-  min-width: 0;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 
 .launch-link {

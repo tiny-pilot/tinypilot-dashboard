@@ -147,8 +147,6 @@ class DeviceCard extends HTMLElement {
       metricsOutput: this.querySelector(`#device-metrics-output-${id}`),
       intervalInput: this.querySelector(`#screenshot-interval-${id}`),
       expandedDetails: this.querySelector(`#device-details-${id}`),
-      replaceKeyInput: this.querySelector(`#replace-api-key-${id}`),
-      replaceKeyStatus: this.querySelector(`#replace-api-key-status-${id}`),
     };
   }
 
@@ -223,6 +221,7 @@ class DeviceCard extends HTMLElement {
           <div class="tiny-device-body">
             <div class="actions">
               <button type="button" data-action="fetch-device-snapshot" data-device-id="${id}">Refresh device snapshot</button>
+              <button type="button" data-action="replace-api-key" data-device-id="${id}">Replace API key</button>
               <button type="button" data-action="delete-device" data-device-id="${id}">Remove device</button>
             </div>
             <div id="device-collapsed-summary-${id}" class="metrics-output">
@@ -231,23 +230,6 @@ class DeviceCard extends HTMLElement {
             <details id="device-details-${id}" class="device-details" hidden>
               <summary>Expanded TinyPilot device info</summary>
               <div id="device-metrics-output-${id}" class="metrics-output"></div>
-            </details>
-            <details class="replace-api-key-details">
-              <summary>Replace API key</summary>
-              <p class="section-note">Create a key on the device under System → Automation, then paste it here.</p>
-              <div class="actions actions-replace-api-key">
-                <label class="sr-only" for="replace-api-key-${id}">New API key</label>
-                <input
-                  id="replace-api-key-${id}"
-                  class="replace-api-key-input"
-                  type="password"
-                  autocomplete="off"
-                  spellcheck="false"
-                  placeholder="New API key"
-                >
-                <button type="button" data-action="replace-api-key" data-device-id="${id}">Save key</button>
-              </div>
-              <p id="replace-api-key-status-${id}" class="subtitle"></p>
             </details>
           </div>
         </section>
@@ -509,41 +491,6 @@ class DeviceCard extends HTMLElement {
       capturedAt: result.capturedAt,
       kind: 'live',
     });
-  }
-
-  async replaceApiKey() {
-    if (!this._device) {
-      return false;
-    }
-    const { replaceKeyInput, replaceKeyStatus } = this._elements;
-    const apiKey = (replaceKeyInput?.value || '').trim();
-    if (!apiKey) {
-      if (replaceKeyStatus) {
-        replaceKeyStatus.textContent = 'Enter a new API key.';
-      }
-      return false;
-    }
-    if (replaceKeyStatus) {
-      replaceKeyStatus.textContent = 'Saving…';
-    }
-    const result = await window.dashboardApi.putJson(
-      `/api/devices/${this._device.id}/api-key`,
-      { api_key: apiKey },
-    );
-    if (replaceKeyInput) {
-      replaceKeyInput.value = '';
-    }
-    if (result.error) {
-      if (replaceKeyStatus) {
-        replaceKeyStatus.textContent = result.error;
-      }
-      return false;
-    }
-    if (replaceKeyStatus) {
-      replaceKeyStatus.textContent = 'API key updated.';
-    }
-    await this.refreshSnapshot();
-    return true;
   }
 
   _setExpandedVisible(visible) {

@@ -31,6 +31,29 @@ def test_remove_device_uses_in_page_modal():
     assert 'button-danger-quiet' in source
 
 
+def test_replace_api_key_uses_in_page_modal_without_danger():
+    app = APP.read_text(encoding='utf-8')
+    assert 'replace-api-key-modal' in app
+    assert '_openReplaceApiKeyModal' in app
+    assert '_bindReplaceApiKeyForm' in app
+    assert 'REPLACE_API_KEY_MODAL_LABEL' in app
+    assert 'System → Automation' in app
+    modal = app.split('id="replace-api-key-modal"', 1)[1]
+    modal = modal.split('id="update-device-modal"', 1)[0]
+    assert 'button-danger-quiet' not in modal
+    assert 'type="password"' in modal
+    assert '>Save</button>' in modal
+    assert '>Cancel</button>' in modal
+    card = CARD.read_text(encoding='utf-8')
+    assert 'data-action="replace-api-key"' in card
+    assert 'replace-api-key-details' not in card
+    actions = card.split('class="actions"', 1)[1]
+    actions = actions.split('</div>', 1)[0]
+    assert 'Replace API key' in actions
+    assert 'Remove device' in actions
+    assert actions.index('Replace API key') < actions.index('Remove device')
+
+
 def test_device_card_open_webui_header_and_remove_label():
     source = CARD.read_text(encoding='utf-8')
     assert 'function renderHeaderOpenWebUi' in source
