@@ -306,22 +306,10 @@ button.button-danger-quiet:hover {
   background: #0b1220;
 }
 
-.preview-offline-badge {
-  position: absolute;
-  top: 0.6rem;
-  left: 0.6rem;
-  z-index: 2;
-  padding: 0.15rem 0.45rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #0b1220;
-  background: color-mix(in srgb, var(--color-warning) 85%, white);
-}
-
 .preview-placeholder {
   position: absolute;
   inset: 0;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -350,12 +338,19 @@ button.button-danger-quiet:hover {
   background: #05070c;
 }
 
+/* Centered label over a dimmed cached frame (offline with image). */
+.preview-placeholder--overlay {
+  background: transparent;
+  pointer-events: none;
+}
+
 .preview-placeholder-title {
   margin: 0;
-  font-size: 0.9rem;
-  font-weight: 400;
-  line-height: 1.35;
-  color: var(--color-muted);
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  color: var(--color-text);
 }
 
 .preview-placeholder-detail {
@@ -368,10 +363,10 @@ button.button-danger-quiet:hover {
 
 /* Same shape as TinyPilot Pro's progress-spinner, muted for the preview well. */
 .preview-spinner {
-  width: 2.5rem;
-  height: 2.5rem;
-  border: 3px solid color-mix(in srgb, var(--color-muted) 28%, transparent);
-  border-top-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-muted));
+  width: 3rem;
+  height: 3rem;
+  border: 3px solid color-mix(in srgb, var(--color-muted) 35%, transparent);
+  border-top-color: color-mix(in srgb, var(--color-accent) 70%, var(--color-muted));
   border-radius: 50%;
   box-sizing: border-box;
   animation: preview-spin 1.5s linear infinite;

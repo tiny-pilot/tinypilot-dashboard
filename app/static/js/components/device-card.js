@@ -134,7 +134,6 @@ class DeviceCard extends HTMLElement {
       screenshot: this.querySelector(`#connected-screenshot-${id}`),
       link: this.querySelector(`#connected-screenshot-link-${id}`),
       connectedStatus: this.querySelector(`#connected-status-${id}`),
-      offlineBadge: this.querySelector(`#preview-offline-badge-${id}`),
       placeholder: this.querySelector(`#preview-placeholder-${id}`),
       summaryOutput: this.querySelector(`#device-collapsed-summary-${id}`),
       metricsOutput: this.querySelector(`#device-metrics-output-${id}`),
@@ -187,7 +186,6 @@ class DeviceCard extends HTMLElement {
                 <div id="preview-placeholder-${id}" class="preview-placeholder preview-placeholder--loading" aria-hidden="true">
                   <div class="preview-spinner" aria-hidden="true"></div>
                 </div>
-                <span id="preview-offline-badge-${id}" class="preview-offline-badge" hidden>Offline</span>
               </div>
             </a>
             <div class="actions actions-connected-primary">
@@ -253,7 +251,7 @@ class DeviceCard extends HTMLElement {
   }
 
   _showLoadingPlaceholder() {
-    const { screenshot, placeholder, offlineBadge, frame } = this._elements;
+    const { screenshot, placeholder, frame } = this._elements;
     if (screenshot) {
       screenshot.hidden = true;
       screenshot.removeAttribute('src');
@@ -267,9 +265,6 @@ class DeviceCard extends HTMLElement {
       placeholder.className = 'preview-placeholder preview-placeholder--loading';
       placeholder.innerHTML = '<div class="preview-spinner" aria-hidden="true"></div>';
     }
-    if (offlineBadge) {
-      offlineBadge.hidden = true;
-    }
     if (frame) {
       frame.className = 'preview-frame preview-frame--loading';
     }
@@ -277,7 +272,7 @@ class DeviceCard extends HTMLElement {
   }
 
   _showPanelPlaceholder(kind, title, detail) {
-    const { screenshot, placeholder, offlineBadge, frame, link } = this._elements;
+    const { screenshot, placeholder, frame, link } = this._elements;
     this._revokeObjectUrl();
     if (screenshot) {
       screenshot.hidden = true;
@@ -295,9 +290,6 @@ class DeviceCard extends HTMLElement {
         ${detail ? `<p class="preview-placeholder-detail">${escapeHtml(detail)}</p>` : ''}
       `;
     }
-    if (offlineBadge) {
-      offlineBadge.hidden = kind !== 'offline';
-    }
     if (frame) {
       frame.className = `preview-frame preview-frame--${kind}`;
     }
@@ -305,8 +297,19 @@ class DeviceCard extends HTMLElement {
     this._previewState = kind;
   }
 
+  _showCenteredLabel(text) {
+    const { placeholder } = this._elements;
+    if (!placeholder) {
+      return;
+    }
+    placeholder.hidden = false;
+    placeholder.className = 'preview-placeholder preview-placeholder--overlay';
+    placeholder.innerHTML =
+      `<p class="preview-placeholder-title">${escapeHtml(text)}</p>`;
+  }
+
   _showImage({ blobUrl, capturedAt, kind }) {
-    const { screenshot, placeholder, offlineBadge, frame, link } = this._elements;
+    const { screenshot, placeholder, frame, link } = this._elements;
     if (!screenshot) {
       return;
     }
@@ -316,7 +319,7 @@ class DeviceCard extends HTMLElement {
       if (this._online === false) {
         this._showPanelPlaceholder(
           'offline',
-          'Device offline',
+          'Offline',
           this._lastChecked
             ? `Last checked ${formatRelativeTime(this._lastChecked)}`
             : '',
@@ -325,7 +328,7 @@ class DeviceCard extends HTMLElement {
           this._elements.connectedStatus,
           this._lastChecked
             ? `Last checked ${formatRelativeTime(this._lastChecked)}.`
-            : 'Device offline',
+            : 'Offline',
           'offline',
         );
       } else {
@@ -336,18 +339,19 @@ class DeviceCard extends HTMLElement {
     screenshot.src = blobUrl;
     screenshot.classList.toggle('connected-screenshot--cached', kind === 'cached');
     screenshot.classList.toggle('connected-screenshot--offline', kind === 'offline');
-    if (placeholder) {
+    if (kind === 'offline') {
+      this._showCenteredLabel('Offline');
+    } else if (placeholder) {
       placeholder.hidden = true;
       placeholder.innerHTML = '';
-    }
-    if (offlineBadge) {
-      offlineBadge.hidden = kind !== 'offline';
     }
     if (frame) {
       frame.className = `preview-frame preview-frame--${kind}`;
     }
-    if (deviceLaunchHref(this._device)) {
+    if (deviceLaunchHref(this._device) && kind !== 'offline') {
       activateScreenshotLink(link);
+    } else {
+      deactivateScreenshotLink(link);
     }
     this._capturedAt = capturedAt;
     this._hasCachedImage = true;
@@ -409,7 +413,7 @@ class DeviceCard extends HTMLElement {
       } else if (!this._hasCachedImage) {
         this._showPanelPlaceholder(
           'offline',
-          'Device offline',
+          'Offline',
           this._lastChecked
             ? `Last checked ${formatRelativeTime(this._lastChecked)}`
             : '',
@@ -418,7 +422,7 @@ class DeviceCard extends HTMLElement {
           this._elements.connectedStatus,
           this._lastChecked
             ? `Last checked ${formatRelativeTime(this._lastChecked)}.`
-            : 'Device offline',
+            : 'Offline',
           'offline',
         );
       }
@@ -470,7 +474,7 @@ class DeviceCard extends HTMLElement {
       } else if (this._online === false) {
         this._showPanelPlaceholder(
           'offline',
-          'Device offline',
+          'Offline',
           this._lastChecked
             ? `Last checked ${formatRelativeTime(this._lastChecked)}`
             : '',
@@ -479,7 +483,7 @@ class DeviceCard extends HTMLElement {
           this._elements.connectedStatus,
           this._lastChecked
             ? `Last checked ${formatRelativeTime(this._lastChecked)}.`
-            : 'Device offline',
+            : 'Offline',
           'offline',
         );
       } else {

@@ -27,10 +27,13 @@ def test_device_card_preview_state_labels():
     assert 'Live preview, updated' in source
     assert 'No signal' in source
     assert 'No signal from computer' not in source
-    assert 'Device offline' in source
+    assert "_showCenteredLabel('Offline')" in source
+    assert 'Device offline' not in source
     assert 'preview-placeholder--loading' in source
+    assert 'preview-placeholder--overlay' in source
     assert 'preview-spinner' in source
     assert 'preview-monitor-icon' not in source
+    assert 'preview-offline-badge' not in source
     assert 'latest-screenshot' not in source
     assert '_primeFromCache' in source
     assert 'Replace API key' in source
