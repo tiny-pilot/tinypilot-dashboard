@@ -332,6 +332,12 @@ button.button-danger-quiet:hover {
   color: color-mix(in srgb, var(--color-text) 70%, transparent);
 }
 
+/* Author `display: flex` otherwise overrides the hidden attribute and the
+   shimmer stays painted over a successful live/cached <img>. */
+.preview-placeholder[hidden] {
+  display: none !important;
+}
+
 .preview-placeholder--shimmer {
   background: linear-gradient(
     110deg,

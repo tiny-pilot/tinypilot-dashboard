@@ -31,3 +31,9 @@ def test_device_card_preview_state_labels():
     assert 'latest-screenshot' not in source
     assert '_primeFromCache' in source
     assert 'Replace API key' in source
+
+
+def test_preview_placeholder_hidden_overrides_flex_display():
+    css = (ROOT / 'app/static/css/dashboard.css').read_text(encoding='utf-8')
+    assert '.preview-placeholder[hidden]' in css
+    assert 'display: none !important' in css
