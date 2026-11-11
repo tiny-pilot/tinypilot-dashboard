@@ -406,6 +406,12 @@ button.button-danger-quiet:hover {
   line-height: 1.5;
 }
 
+/* Status line under the form (Save / Remove result): only when it has text. */
+.modal-panel > form + .subtitle:not(:empty) {
+  margin-top: var(--space-3);
+  margin-bottom: 0;
+}
+
 .connected-system .subtitle {
   margin: var(--space-2) 0 0;
   font-size: 0.9rem;
