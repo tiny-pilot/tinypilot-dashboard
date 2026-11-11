@@ -399,6 +399,28 @@ button.button-danger-quiet:hover {
   color: var(--color-muted);
 }
 
+.modal-instructions {
+  margin: 0 0 var(--space-3);
+}
+
+.modal-instructions .subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.modal-instructions .subtitle + .subtitle {
+  margin-top: var(--space-2);
+}
+
+.modal-panel > .subtitle.modal-instructions {
+  margin: 0 0 var(--space-3);
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
 .connected-system .subtitle {
   margin: var(--space-2) 0 0;
   font-size: 0.9rem;
