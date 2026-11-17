@@ -99,6 +99,8 @@ class DeviceCard extends HTMLElement {
     this._capturedAt = null;
     this._objectUrl = null;
     this._previewState = 'loading';
+    this._renameSeq = 0;
+    this._renameSaving = false;
   }
 
   set device(value) {
@@ -160,7 +162,16 @@ class DeviceCard extends HTMLElement {
     this.innerHTML = `
       <section class="panel device-card">
         <header class="device-card-header">
-          <h3 class="device-card-title">${escapeHtml(device.friendly_name)}</h3>
+          <div class="device-card-title-cluster">
+            <h3 class="device-card-title">${escapeHtml(device.friendly_name)}</h3>
+            <button type="button" class="device-rename" data-rename="start">Rename</button>
+            <form class="device-rename-form" hidden>
+              <input name="friendly_name" maxlength="60" autocomplete="off" aria-label="Friendly name">
+              <button type="submit">Save</button>
+              <button type="button" data-rename="cancel">Cancel</button>
+              <p class="device-rename-error" hidden></p>
+            </form>
+          </div>
           ${renderHeaderOpenWebUi(device)}
         </header>
         <section class="device-section connected-system">
@@ -235,8 +246,89 @@ class DeviceCard extends HTMLElement {
       </section>
     `;
     this._cacheElements();
+    this._bindRename();
     this._showLoadingPlaceholder();
     void this._primeFromCache();
+  }
+
+  _bindRename() {
+    const header = this.querySelector('.device-card-header');
+    const title = header.querySelector('.device-card-title');
+    const start = header.querySelector('[data-rename="start"]');
+    const form = header.querySelector('.device-rename-form');
+    const input = form.querySelector('input[name="friendly_name"]');
+    const error = form.querySelector('.device-rename-error');
+    const showError = (text) => {
+      error.hidden = !text;
+      error.textContent = text || '';
+    };
+    const closeEditor = () => {
+      // Bump the seq so an in-flight save cannot apply after Cancel.
+      this._renameSeq += 1;
+      this._renameSaving = false;
+      form.hidden = true;
+      title.hidden = false;
+      start.hidden = false;
+      showError('');
+    };
+    start.addEventListener('click', () => {
+      input.value = this._device.friendly_name;
+      showError('');
+      title.hidden = true;
+      start.hidden = true;
+      form.hidden = false;
+      input.focus();
+    });
+    form.querySelector('[data-rename="cancel"]').addEventListener('click', closeEditor);
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeEditor();
+      }
+    });
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (this._renameSaving) {
+        return;
+      }
+      const typed = input.value.trim();
+      if (!typed) {
+        showError('Enter a name.');
+        return;
+      }
+      this._renameSaving = true;
+      const seq = this._renameSeq;
+      const result = await window.dashboardApi.putJson(
+        `/api/devices/${this._device.id}`,
+        { friendly_name: typed },
+      );
+      if (seq !== this._renameSeq) {
+        return;
+      }
+      this._renameSaving = false;
+      if (result.error) {
+        showError(result.error);
+        return;
+      }
+      const saved = result.device && result.device.friendly_name;
+      if (typeof saved !== 'string' || !saved.trim()) {
+        showError('Could not rename this device.');
+        return;
+      }
+      // ponytail: write the name in place. Assigning this.device calls
+      // _render() and drops the preview. The page list holds this object.
+      this._device.friendly_name = saved;
+      title.textContent = saved;
+      const link = this.querySelector(`#connected-screenshot-link-${this._device.id}`);
+      const image = this.querySelector(`#connected-screenshot-${this._device.id}`);
+      if (link) {
+        link.setAttribute('aria-label', `Control ${saved}`);
+      }
+      if (image) {
+        image.alt = `Latest screenshot for ${saved}`;
+      }
+      closeEditor();
+    });
   }
 
   _showLoadingPlaceholder() {

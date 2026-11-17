@@ -76,6 +76,91 @@ def test_create_device_rejects_blank_api_key(client):
     assert response.status_code == 400
 
 
+def test_rename_device_persists_friendly_name(client):
+    create_response = client.post('/api/devices', json={
+        'friendly_name': 'Office Rack KVM',
+        'base_url': 'https://192.168.1.44',
+        'api_key': 'test-api-key',
+    })
+    device_id = create_response.json['device']['id']
+
+    response = client.put(
+        f'/api/devices/{device_id}',
+        json={'friendly_name': '  Lab Rack  '},
+    )
+    assert response.status_code == 200
+    device = response.json['device']
+    assert device['friendly_name'] == 'Lab Rack'
+    assert device['base_url'] == 'https://192.168.1.44'
+    assert device['api_key_configured'] is True
+    assert 'screenshot_refresh_interval_minutes' in device
+
+    listed = client.get('/api/devices').json['devices']
+    assert listed[0]['friendly_name'] == 'Lab Rack'
+
+
+def test_rename_device_rejects_blank_name(client):
+    create_response = client.post('/api/devices', json={
+        'friendly_name': 'Office Rack KVM',
+        'base_url': 'https://192.168.1.44',
+        'api_key': 'test-api-key',
+    })
+    device_id = create_response.json['device']['id']
+
+    response = client.put(
+        f'/api/devices/{device_id}',
+        json={'friendly_name': '   '},
+    )
+    assert response.status_code == 400
+    assert response.json['error'] == 'friendly_name is required'
+    listed = client.get('/api/devices').json['devices']
+    assert listed[0]['friendly_name'] == 'Office Rack KVM'
+
+
+def test_friendly_name_rejects_more_than_60_characters(client):
+    long_name = 'R' * 61
+    create_response = client.post('/api/devices', json={
+        'friendly_name': long_name,
+        'base_url': 'https://192.168.1.44',
+        'api_key': 'test-api-key',
+    })
+    assert create_response.status_code == 400
+    assert create_response.json['error'] == (
+        'friendly_name must be 60 characters or fewer'
+    )
+
+    created = client.post('/api/devices', json={
+        'friendly_name': 'Office Rack KVM',
+        'base_url': 'https://192.168.1.44',
+        'api_key': 'test-api-key',
+    })
+    device_id = created.json['device']['id']
+    rename_response = client.put(
+        f'/api/devices/{device_id}',
+        json={'friendly_name': long_name},
+    )
+    assert rename_response.status_code == 400
+    assert rename_response.json['error'] == (
+        'friendly_name must be 60 characters or fewer'
+    )
+    listed = client.get('/api/devices').json['devices']
+    assert listed[0]['friendly_name'] == 'Office Rack KVM'
+
+    ok_name = 'R' * 60
+    ok_response = client.put(
+        f'/api/devices/{device_id}',
+        json={'friendly_name': ok_name},
+    )
+    assert ok_response.status_code == 200
+    assert ok_response.json['device']['friendly_name'] == ok_name
+
+
+def test_rename_device_missing_returns_404(client):
+    response = client.put('/api/devices/999', json={'friendly_name': 'Lab'})
+    assert response.status_code == 404
+    assert response.json['error'] == 'device not found'
+
+
 def test_delete_device_removes_device_and_related_rows(client):
     payload = {
         'friendly_name': 'Delete Me',
