@@ -32,6 +32,8 @@ from app.tinypilot_client import TinyPilotClient
 
 api_blueprint = Blueprint('api', __name__, url_prefix='/api')
 
+_FRIENDLY_NAME_MAX = 60
+
 
 @api_blueprint.get('/version')
 def get_version():
@@ -125,6 +127,10 @@ def create_device():
         return jsonify(
             {'error': 'friendly_name, base_url, and api_key are required'}
         ), 400
+    if len(friendly_name) > _FRIENDLY_NAME_MAX:
+        return jsonify(
+            {'error': 'friendly_name must be 60 characters or fewer'}
+        ), 400
 
     key_path = Path(current_app.config['SECRET_KEY_PATH'])
     db = get_db()
@@ -172,6 +178,72 @@ def create_device():
             }
         }
     ), 201
+
+
+@api_blueprint.put('/devices/<int:device_id>')
+def update_device_friendly_name(device_id: int):
+    payload = request.get_json(silent=True) or {}
+    raw_name = payload.get('friendly_name') if isinstance(payload, dict) else None
+    if not isinstance(raw_name, str) or not raw_name.strip():
+        return jsonify({'error': 'friendly_name is required'}), 400
+    friendly_name = raw_name.strip()
+    if len(friendly_name) > _FRIENDLY_NAME_MAX:
+        return jsonify(
+            {'error': 'friendly_name must be 60 characters or fewer'}
+        ), 400
+
+    db = get_db()
+    existing = db.execute(
+        """
+        SELECT id
+        FROM devices
+        WHERE id = ?
+        """,
+        (device_id,),
+    ).fetchone()
+    if existing is None:
+        return jsonify({'error': 'device not found'}), 404
+
+    db.execute(
+        """
+        UPDATE devices
+        SET friendly_name = ?
+        WHERE id = ?
+        """,
+        (friendly_name, device_id),
+    )
+    db.commit()
+    row = db.execute(
+        """
+        SELECT
+            devices.id,
+            devices.friendly_name,
+            devices.base_url,
+            device_runtime_state.screenshot_refresh_interval_minutes,
+            CASE
+                WHEN device_auth.encrypted_automation_token IS NOT NULL THEN 1
+                ELSE 0
+            END AS api_key_configured
+        FROM devices
+        LEFT JOIN device_runtime_state ON device_runtime_state.device_id = devices.id
+        LEFT JOIN device_auth ON device_auth.device_id = devices.id
+        WHERE devices.id = ?
+        """,
+        (device_id,),
+    ).fetchone()
+    return jsonify(
+        {
+            'device': {
+                'id': row['id'],
+                'friendly_name': row['friendly_name'],
+                'base_url': row['base_url'],
+                'screenshot_refresh_interval_minutes': (
+                    row['screenshot_refresh_interval_minutes'] or 0
+                ),
+                'api_key_configured': bool(row['api_key_configured']),
+            }
+        }
+    )
 
 
 @api_blueprint.delete('/devices/<int:device_id>')

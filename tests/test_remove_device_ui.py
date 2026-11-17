@@ -184,6 +184,17 @@ def test_circleci_runs_core_and_security_jobs():
     assert './dev-scripts/check-javascript' in config
 
 
+def test_device_card_renames_from_the_title():
+    source = CARD.read_text(encoding='utf-8')
+    assert 'data-rename="start"' in source
+    assert 'maxlength="60"' in source
+    assert 'maxlength="60"' in APP.read_text(encoding='utf-8')
+    assert 'Enter a name.' in source
+    assert 'Could not rename this device.' in source
+    assert 'data-action="rename"' not in source
+    assert 'window.prompt(' not in APP.read_text(encoding='utf-8')
+
+
 def test_screenshot_click_opens_device_webui():
     source = CARD.read_text(encoding='utf-8')
     assert 'Open latest screenshot in new tab' not in source

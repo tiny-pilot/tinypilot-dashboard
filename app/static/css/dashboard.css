@@ -113,6 +113,43 @@ summary {
 
 .device-card-header .device-card-title {
   min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-card-title-cluster {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.device-rename-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.device-rename-form[hidden] {
+  display: none;
+}
+
+.device-rename-form input {
+  min-width: 0;
+  flex: 1 1 8rem;
+}
+
+.device-card-header .device-rename-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-nav-text);
 }
 
 .header-open-webui {

@@ -55,7 +55,7 @@ class DashboardApp extends HTMLElement {
           <form id="add-device-form" class="form-grid">
             <label>
               Friendly name
-              <input name="friendly_name" required autocomplete="off">
+              <input name="friendly_name" required maxlength="60" autocomplete="off">
             </label>
             <label>
               TinyPilot device URL
