@@ -186,13 +186,30 @@ def test_circleci_runs_core_and_security_jobs():
 
 def test_device_card_renames_from_the_title():
     source = CARD.read_text(encoding='utf-8')
-    assert 'data-rename="start"' in source
+    assert 'class="device-title-rename" data-rename="start"' in source
+    assert 'aria-label="Rename ${escapeHtml(device.friendly_name)}"' in source
+    assert '>Rename</button>' not in source
     assert 'maxlength="60"' in source
     assert 'maxlength="60"' in APP.read_text(encoding='utf-8')
-    assert 'Enter a name.' in source
+    assert 'data-rename="cancel"' not in source
     assert 'Could not rename this device.' in source
+    assert 'role="alert"' in source
     assert 'data-action="rename"' not in source
     assert 'window.prompt(' not in APP.read_text(encoding='utf-8')
+    assert "start.setAttribute('aria-label', `Rename ${name}`)" in source
+    blur = source.split("addEventListener('blur'", 1)[1]
+    blur = blur.split('addEventListener', 1)[0]
+    assert '.focus(' not in blur
+    escape = source.split("event.key === 'Escape'", 1)[1]
+    escape = escape.split("event.key === 'Enter'", 1)[0]
+    assert 'start.focus()' in escape
+    enter = source.split("event.key === 'Enter'", 1)[1]
+    enter = enter.split('setTimeout', 1)[0]
+    assert 'start.focus()' in enter
+    css = (ROOT / 'app/static/css/dashboard.css').read_text(encoding='utf-8')
+    rule = css.split('.device-card-header .device-rename-error', 1)[1]
+    rule = rule.split('}', 1)[0]
+    assert 'var(--color-danger)' in rule
 
 
 def test_screenshot_click_opens_device_webui():
