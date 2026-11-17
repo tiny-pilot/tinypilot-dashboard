@@ -164,12 +164,12 @@ class DeviceCard extends HTMLElement {
         <header class="device-card-header">
           <div class="device-card-title-cluster">
             <h3 class="device-card-title">
-              <button type="button" class="device-title-rename" data-rename="start">${escapeHtml(device.friendly_name)}</button>
+              <button type="button" class="device-title-rename" data-rename="start" aria-label="Rename ${escapeHtml(device.friendly_name)}">${escapeHtml(device.friendly_name)}</button>
             </h3>
             <form class="device-rename-form" hidden>
               <input name="friendly_name" maxlength="60" autocomplete="off" aria-label="Friendly name">
             </form>
-            <p class="device-rename-error" hidden></p>
+            <p class="device-rename-error" role="alert" hidden></p>
           </div>
           <div class="device-card-header-actions">
             ${renderHeaderOpenWebUi(device)}
@@ -268,11 +268,15 @@ class DeviceCard extends HTMLElement {
       form.hidden = true;
       title.hidden = false;
     };
+    const labelName = (name) => {
+      start.textContent = name;
+      start.setAttribute('aria-label', `Rename ${name}`);
+    };
     const applyName = (name) => {
       // ponytail: write the name in place. Assigning this.device calls
       // _render() and drops the preview. The page list holds this object.
       this._device.friendly_name = name;
-      start.textContent = name;
+      labelName(name);
       const link = this.querySelector(`#connected-screenshot-link-${this._device.id}`);
       const image = this.querySelector(`#connected-screenshot-${this._device.id}`);
       if (link) {
@@ -289,13 +293,13 @@ class DeviceCard extends HTMLElement {
       const typed = input.value.trim();
       const previous = this._device.friendly_name;
       if (!typed || typed === previous) {
-        start.textContent = previous;
+        labelName(previous);
         showTitle();
         return;
       }
       this._renameSaving = true;
       const seq = this._renameSeq;
-      start.textContent = typed;
+      labelName(typed);
       showTitle();
       const result = await window.dashboardApi.putJson(
         `/api/devices/${this._device.id}`,
@@ -307,7 +311,7 @@ class DeviceCard extends HTMLElement {
       this._renameSaving = false;
       const saved = result.device && result.device.friendly_name;
       if (result.error || typeof saved !== 'string' || !saved.trim()) {
-        start.textContent = previous;
+        labelName(previous);
         showError(result.error || 'Could not rename this device.');
         return;
       }
@@ -318,7 +322,7 @@ class DeviceCard extends HTMLElement {
       suppressBlur = true;
       this._renameSeq += 1;
       this._renameSaving = false;
-      start.textContent = this._device.friendly_name;
+      labelName(this._device.friendly_name);
       showTitle();
       showError('');
     };
@@ -336,10 +340,12 @@ class DeviceCard extends HTMLElement {
         suppressBlur = true;
         cancel();
         input.blur();
+        start.focus();
       } else if (event.key === 'Enter') {
         event.preventDefault();
         suppressBlur = true;
         commit();
+        start.focus();
       }
       setTimeout(() => {
         suppressBlur = false;

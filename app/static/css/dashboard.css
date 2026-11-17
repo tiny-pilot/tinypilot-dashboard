@@ -193,7 +193,7 @@ summary {
 .device-card-header .device-rename-error {
   flex-basis: 100%;
   margin: 0;
-  color: var(--color-nav-text);
+  color: var(--color-danger);
 }
 
 .header-open-webui {
