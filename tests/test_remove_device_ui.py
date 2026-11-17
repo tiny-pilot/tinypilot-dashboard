@@ -186,10 +186,11 @@ def test_circleci_runs_core_and_security_jobs():
 
 def test_device_card_renames_from_the_title():
     source = CARD.read_text(encoding='utf-8')
-    assert 'data-rename="start"' in source
+    assert 'class="device-title-rename" data-rename="start"' in source
+    assert '>Rename</button>' not in source
     assert 'maxlength="60"' in source
     assert 'maxlength="60"' in APP.read_text(encoding='utf-8')
-    assert 'Enter a name.' in source
+    assert 'data-rename="cancel"' not in source
     assert 'Could not rename this device.' in source
     assert 'data-action="rename"' not in source
     assert 'window.prompt(' not in APP.read_text(encoding='utf-8')

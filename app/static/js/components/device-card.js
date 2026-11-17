@@ -163,16 +163,17 @@ class DeviceCard extends HTMLElement {
       <section class="panel device-card">
         <header class="device-card-header">
           <div class="device-card-title-cluster">
-            <h3 class="device-card-title">${escapeHtml(device.friendly_name)}</h3>
-            <button type="button" class="device-rename" data-rename="start">Rename</button>
+            <h3 class="device-card-title">
+              <button type="button" class="device-title-rename" data-rename="start">${escapeHtml(device.friendly_name)}</button>
+            </h3>
             <form class="device-rename-form" hidden>
               <input name="friendly_name" maxlength="60" autocomplete="off" aria-label="Friendly name">
-              <button type="submit">Save</button>
-              <button type="button" data-rename="cancel">Cancel</button>
-              <p class="device-rename-error" hidden></p>
             </form>
+            <p class="device-rename-error" hidden></p>
           </div>
-          ${renderHeaderOpenWebUi(device)}
+          <div class="device-card-header-actions">
+            ${renderHeaderOpenWebUi(device)}
+          </div>
         </header>
         <section class="device-section connected-system">
           <div class="connected-system-header">
@@ -257,47 +258,45 @@ class DeviceCard extends HTMLElement {
     const start = header.querySelector('[data-rename="start"]');
     const form = header.querySelector('.device-rename-form');
     const input = form.querySelector('input[name="friendly_name"]');
-    const error = form.querySelector('.device-rename-error');
+    const error = header.querySelector('.device-rename-error');
+    let suppressBlur = false;
     const showError = (text) => {
       error.hidden = !text;
       error.textContent = text || '';
     };
-    const closeEditor = () => {
-      // Bump the seq so an in-flight save cannot apply after Cancel.
-      this._renameSeq += 1;
-      this._renameSaving = false;
+    const showTitle = () => {
       form.hidden = true;
       title.hidden = false;
-      start.hidden = false;
-      showError('');
     };
-    start.addEventListener('click', () => {
-      input.value = this._device.friendly_name;
-      showError('');
-      title.hidden = true;
-      start.hidden = true;
-      form.hidden = false;
-      input.focus();
-    });
-    form.querySelector('[data-rename="cancel"]').addEventListener('click', closeEditor);
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeEditor();
+    const applyName = (name) => {
+      // ponytail: write the name in place. Assigning this.device calls
+      // _render() and drops the preview. The page list holds this object.
+      this._device.friendly_name = name;
+      start.textContent = name;
+      const link = this.querySelector(`#connected-screenshot-link-${this._device.id}`);
+      const image = this.querySelector(`#connected-screenshot-${this._device.id}`);
+      if (link) {
+        link.setAttribute('aria-label', `Control ${name}`);
       }
-    });
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
+      if (image) {
+        image.alt = `Latest screenshot for ${name}`;
+      }
+    };
+    const commit = async () => {
       if (this._renameSaving) {
         return;
       }
       const typed = input.value.trim();
-      if (!typed) {
-        showError('Enter a name.');
+      const previous = this._device.friendly_name;
+      if (!typed || typed === previous) {
+        start.textContent = previous;
+        showTitle();
         return;
       }
       this._renameSaving = true;
       const seq = this._renameSeq;
+      start.textContent = typed;
+      showTitle();
       const result = await window.dashboardApi.putJson(
         `/api/devices/${this._device.id}`,
         { friendly_name: typed },
@@ -306,28 +305,57 @@ class DeviceCard extends HTMLElement {
         return;
       }
       this._renameSaving = false;
-      if (result.error) {
-        showError(result.error);
-        return;
-      }
       const saved = result.device && result.device.friendly_name;
-      if (typeof saved !== 'string' || !saved.trim()) {
-        showError('Could not rename this device.');
+      if (result.error || typeof saved !== 'string' || !saved.trim()) {
+        start.textContent = previous;
+        showError(result.error || 'Could not rename this device.');
         return;
       }
-      // ponytail: write the name in place. Assigning this.device calls
-      // _render() and drops the preview. The page list holds this object.
-      this._device.friendly_name = saved;
-      title.textContent = saved;
-      const link = this.querySelector(`#connected-screenshot-link-${this._device.id}`);
-      const image = this.querySelector(`#connected-screenshot-${this._device.id}`);
-      if (link) {
-        link.setAttribute('aria-label', `Control ${saved}`);
+      applyName(saved);
+      showError('');
+    };
+    const cancel = () => {
+      suppressBlur = true;
+      this._renameSeq += 1;
+      this._renameSaving = false;
+      start.textContent = this._device.friendly_name;
+      showTitle();
+      showError('');
+    };
+    start.addEventListener('click', () => {
+      input.value = this._device.friendly_name;
+      showError('');
+      title.hidden = true;
+      form.hidden = false;
+      input.focus();
+      input.select();
+    });
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        suppressBlur = true;
+        cancel();
+        input.blur();
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        suppressBlur = true;
+        commit();
       }
-      if (image) {
-        image.alt = `Latest screenshot for ${saved}`;
+      setTimeout(() => {
+        suppressBlur = false;
+      }, 0);
+    });
+    input.addEventListener('blur', () => {
+      if (suppressBlur) {
+        suppressBlur = false;
+        return;
       }
-      closeEditor();
+      commit();
+    });
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      suppressBlur = true;
+      commit();
     });
   }
 
