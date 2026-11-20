@@ -60,6 +60,36 @@ class RunToolTest(unittest.TestCase):
         self.assertFalse(result['ok'])
         self.assertEqual(result['error'], 'grant_required')
 
+    def test_keystroke_strips_unknown_arguments(self):
+        result = run_tool(
+            'keystroke',
+            {'key': 'a', 'ctrlKey': True, 'unexpected': 'x'},
+            client=self.client,
+            has_grant=True,
+            still_store=self.still_store,
+            session_key='test',
+        )
+
+        self.assertTrue(result['ok'])
+        self.client.post_v1.assert_called_once_with(
+            '/api/v1/keystroke',
+            {'key': 'a', 'ctrlKey': True},
+        )
+
+    def test_click_rejects_non_numeric_coordinates(self):
+        result = run_tool(
+            'click',
+            {'relativeX': 'nope', 'relativeY': 0.5},
+            client=self.client,
+            has_grant=True,
+            still_store=self.still_store,
+            session_key='test',
+        )
+
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['error'], 'invalid_arguments')
+        self.client.post_v1.assert_not_called()
+
     def test_unknown_tool_returns_error(self):
         result = run_tool(
             'unknown_tool',

@@ -1,5 +1,7 @@
 """Tests for the assistant agent loop."""
 
+import threading
+import time
 import unittest
 import uuid
 from unittest.mock import MagicMock
@@ -25,6 +27,23 @@ class FakeProvider:
                 id=f'fake-{uuid.uuid4().hex[:8]}',
                 name='screenshot',
                 arguments={},
+            ),
+        )
+
+
+class KeystrokeProvider:
+    """Requests a keystroke on the first model turn (after any tool results)."""
+
+    def complete(self, messages, tools, images=None):
+        if any(m.get('role') == 'tool' for m in messages):
+            yield ProviderEvent(kind='text', text='Done.')
+            return
+        yield ProviderEvent(
+            kind='tool_call',
+            tool_call=ToolCall(
+                id='fake-key',
+                name='keystroke',
+                arguments={'key': 'Enter'},
             ),
         )
 
@@ -91,6 +110,52 @@ class RunAgentTurnTest(unittest.TestCase):
         event_types = [e['type'] for e in events]
         self.assertIn('tool', event_types)
         self.assertIn('done', event_types)
+
+    def test_keystroke_without_grant_yields_grant_required(self):
+        events = list(run_agent_turn(
+            message='Press enter',
+            session_key='test',
+            client=self.client,
+            provider=KeystrokeProvider(),
+        ))
+        tool_events = [e for e in events if e.get('type') == 'tool']
+        self.assertTrue(tool_events)
+        self.assertEqual(tool_events[0]['name'], 'keystroke')
+        self.assertFalse(tool_events[0]['ok'])
+        self.assertEqual(tool_events[0]['error'], 'grant_required')
+        self.client.post_v1.assert_not_called()
+
+    def test_concurrent_turn_returns_turn_in_progress(self):
+        started = threading.Event()
+
+        class SlowProvider:
+            def complete(self, messages, tools, images=None):
+                started.set()
+                time.sleep(0.3)
+                yield ProviderEvent(kind='text', text='Done.')
+
+        def first_turn():
+            list(run_agent_turn(
+                message='First',
+                session_key='busy',
+                client=self.client,
+                provider=SlowProvider(),
+            ))
+
+        thread = threading.Thread(target=first_turn)
+        thread.start()
+        self.assertTrue(started.wait(timeout=2))
+
+        second = list(run_agent_turn(
+            message='Second',
+            session_key='busy',
+            client=self.client,
+            provider=FakeProvider(),
+        ))
+        thread.join(timeout=2)
+
+        self.assertEqual(second[0]['type'], 'error')
+        self.assertEqual(second[0]['error'], 'turn_in_progress')
 
 
 if __name__ == '__main__':

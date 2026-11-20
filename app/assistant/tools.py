@@ -10,6 +10,10 @@ from app.tinypilot_client import TinyPilotClient
 # Tools that require user grant before execution.
 _MUTATING_TOOLS = frozenset({'keystroke', 'mouseEvent', 'click', 'paste'})
 
+_KEYSTROKE_FIELDS = frozenset(
+    {'key', 'ctrlKey', 'altKey', 'shiftKey', 'metaKey'},
+)
+
 TOOL_SPECS: list[dict[str, Any]] = [
     {
         'type': 'function',
@@ -153,8 +157,12 @@ def run_tool(
         return {'ok': True, 'result': {}, 'still_updated': True}
 
     if name == 'keystroke':
+        key = arguments.get('key')
+        if not isinstance(key, str) or not key:
+            return {'ok': False, 'error': 'invalid_arguments'}
+        body = {field: arguments[field] for field in _KEYSTROKE_FIELDS if field in arguments}
         try:
-            client.post_v1('/api/v1/keystroke', arguments)
+            client.post_v1('/api/v1/keystroke', body)
         except requests.RequestException as exc:
             return {'ok': False, 'error': str(exc)}
         return {'ok': True, 'result': {}}
