@@ -10,7 +10,7 @@ A self-hosted dashboard for monitoring and controlling multiple TinyPilot device
 
 ## What you get
 
-- One web UI that lists your TinyPilot devices, up to four per page, with a live preview of the connected system on each card (cached in the browser only).
+- One web UI that lists your TinyPilot devices, up to eight per page, with a live preview of the connected system on each card (cached in the browser only).
 - One-click device addition (friendly name + TinyPilot URL + Automation API key), plus rename and Replace API key on an existing card.
 - Per-device snapshot of TinyPilot status: connected display resolution, streaming mode (H.264 with bitrate, or MJPEG with framerate and quality), firmware version, network info, and more.
 - Encrypted at-rest storage for Automation API keys.

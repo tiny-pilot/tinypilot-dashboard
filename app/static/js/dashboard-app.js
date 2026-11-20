@@ -8,7 +8,7 @@ const ADD_DEVICE_SUBMIT_LABEL = 'Add device';
 const DELETE_DEVICE_MODAL_LABEL = 'Remove device';
 const REPLACE_API_KEY_MODAL_LABEL = 'Replace API key';
 const UPDATE_DEVICE_MODAL_LABEL = 'Update TinyPilot';
-const DEVICES_PER_PAGE = 4;
+const DEVICES_PER_PAGE = 8;
 const CONNECTED_STATUS_REFRESH_INTERVAL_MS = 30_000;
 const DEVICE_SNAPSHOT_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -558,10 +558,17 @@ class DashboardApp extends HTMLElement {
     const container = this._elements.deviceSections;
     container.innerHTML = '';
     container.className = 'device-grid';
-    // Only special-case a solitary card (centered max-width). Multi-card
-    // columns come from CSS auto-fit, not from device-grid--n2/3/4.
+    // One card stays centered. Two stays paired.
+    // Three and four share the two-by-two grid. Five and six share two rows of three.
+    // Seven and eight use two rows of four.
     if (devices.length === 1) {
       container.classList.add('device-grid--n1');
+    } else if (devices.length === 3 || devices.length === 4) {
+      container.classList.add('device-grid--dense', 'device-grid--quad');
+    } else if (devices.length === 5 || devices.length === 6) {
+      container.classList.add('device-grid--dense', 'device-grid--six');
+    } else if (devices.length > 4) {
+      container.classList.add('device-grid--dense');
     }
     for (const device of devices) {
       const card = document.createElement('device-card');
