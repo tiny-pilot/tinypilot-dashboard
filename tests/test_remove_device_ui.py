@@ -53,7 +53,7 @@ def test_replace_api_key_uses_in_page_modal_without_danger():
     card = CARD.read_text(encoding='utf-8')
     assert 'data-action="replace-api-key"' in card
     assert 'replace-api-key-details' not in card
-    actions = card.split('class="actions"', 1)[1]
+    actions = card.split('class="actions device-actions"', 1)[1]
     actions = actions.split('</div>', 1)[0]
     assert 'Replace API key' in actions
     assert 'Remove device' in actions
@@ -62,15 +62,20 @@ def test_replace_api_key_uses_in_page_modal_without_danger():
 
 def test_device_card_open_webui_header_and_remove_label():
     source = CARD.read_text(encoding='utf-8')
-    assert 'function renderHeaderOpenWebUi' in source
-    assert 'class="header-open-webui"' in source
-    assert '>Open WebUI</a>' in source
+    assert 'Open WebUI' not in source
+    assert 'renderOpenDevice' not in source
+    assert 'header-open-webui' not in source
     assert 'Launch WebUI' not in source
     assert '>Remove device</button>' in source
     assert 'Delete device' not in source
-    header = source.split('class="device-card-header"', 1)[1]
-    header = header.split('</header>', 1)[0]
-    assert 'renderHeaderOpenWebUi(device)' in header
+    primary = source.split('class="actions actions-connected-primary"', 1)[1]
+    primary = primary.split('</div>', 1)[0]
+    assert 'refresh-screenshot' in primary
+    assert 'connected-status-' in primary
+    refresh_row = source.split('class="actions actions-auto-refresh-row"', 1)[1]
+    refresh_row = refresh_row.split('</div>', 1)[0]
+    assert 'save-screenshot-interval' in refresh_row
+    assert 'toggle-device-info' in refresh_row
 
 
 def test_theme_defines_danger_and_warning_colors():
@@ -105,16 +110,46 @@ def test_device_card_keeps_cached_preview_copy():
     assert '_primeFromCache' in source
 
 
-def test_tinypilot_device_heading_matches_target_system():
-    source = CARD.read_text(encoding='utf-8')
-    assert 'class="connected-system-summary__heading">Target system</h3>' in source
-    assert (
-        'class="connected-system-summary__heading">TinyPilot device</h3>'
-        in source
-    )
+def test_page_shows_eight_devices_in_a_dense_grid():
+    app = APP.read_text(encoding='utf-8')
+    assert 'const DEVICES_PER_PAGE = 8;' in app
+    render = app.split('_renderDeviceSections', 1)[1]
+    render = render.split('_renderPaginationControls', 1)[0]
+    assert 'devices.length > 4' in render
+    assert 'devices.length === 5 || devices.length === 6' in render
+    assert 'devices.length === 3 || devices.length === 4' in render
+    assert "container.classList.add('device-grid--dense', 'device-grid--six')" in render
+    assert "container.classList.add('device-grid--dense', 'device-grid--quad')" in render
+    assert "container.classList.add('device-grid--dense')" in render
     css = (ROOT / 'app/static/css/dashboard.css').read_text(encoding='utf-8')
-    assert '.tiny-device-body' in css
-    assert '.connected-system-body' in css
+    assert '.device-grid.device-grid--dense .card-stage' in css
+    nondense = css.split(
+        '.device-grid:not(.device-grid--n1):not(.device-grid--dense) .card-stage',
+        1,
+    )[1]
+    nondense = nondense.split('}', 1)[0]
+    assert 'aspect-ratio: 16 / 9' in nondense
+    assert 'height: auto' in nondense
+    assert 'repeat(4, minmax(0, 1fr))' in css
+    assert 'repeat(3, minmax(0, 1fr))' in css
+    assert 'device-grid--quad' in css
+    assert 'repeat(2, minmax(0, 1fr))' in css
+    assert '100vh' in css
+
+
+def test_device_info_replaces_the_screen_inside_the_card():
+    source = CARD.read_text(encoding='utf-8')
+    assert 'Target system' not in source
+    assert 'Requires Automation License' not in source
+    assert 'Show device info' in source
+    assert 'Hide device info' in source
+    assert 'class="card-well"' in source
+    assert 'class="card-stage"' in source
+    well = source.split('class="card-well"', 1)[1]
+    well = well.split('class="card-controls"', 1)[0]
+    assert 'class="card-stage-info"' in well
+    assert 'data-action="delete-device"' in well
+    assert 'connected-screenshot-link' in well
 
 
 def test_tinypilot_snapshot_health_line_and_software_row():
@@ -140,12 +175,15 @@ def test_tinypilot_snapshot_health_line_and_software_row():
     assert 'data-action="start-device-update"' in view
     assert "snapshotRow('Reachability'" not in view
     assert 'Reachability' not in view
-    opening = source.split('<details', 1)[1].split('>', 1)[0]
-    assert 'device-details' in opening
-    assert 'hidden' in opening
+    inner = source.split('class="device-details"', 1)[1]
+    inner = inner.split('>', 1)[0]
+    assert 'hidden' in inner
     refresh = source.split('async refreshSnapshot()', 1)[1]
     refresh = refresh.split('async ', 1)[0]
     assert '_setExpandedVisible' in refresh
+    assert 'expandedDetails.open' not in source
+    assert 'Refresh device info' in source
+    assert 'Refresh device snapshot' not in source
     assert 'collapsed?.online' in refresh
     assert 'last_management_error' not in view
     api = (ROOT / 'app/static/js/api.js').read_text(encoding='utf-8')

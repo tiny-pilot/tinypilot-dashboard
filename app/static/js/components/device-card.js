@@ -6,7 +6,6 @@ import {
 } from '../lib/device-update.js';
 import { getPreview, putPreview } from '../lib/preview-cache.js';
 
-const AUTOMATION_LICENSE_INFO_URL = 'https://tinypilotkvm.com/pages/automation';
 const UPDATE_POLL_INTERVAL_MS = 3000;
 const UPDATE_POLL_MAX_ERRORS = 10;
 
@@ -74,17 +73,6 @@ function setPreviewStatus(el, text, kind, checkedAt) {
   } else {
     delete el.dataset.checkedAt;
   }
-}
-
-function renderHeaderOpenWebUi(device) {
-  const url = deviceLaunchHref(device);
-  if (!url) {
-    return '';
-  }
-  return (
-    `<a class="header-open-webui" href="${escapeHtml(url)}" ` +
-    `target="_blank" rel="noopener noreferrer">Open WebUI</a>`
-  );
 }
 
 class DeviceCard extends HTMLElement {
@@ -171,85 +159,96 @@ class DeviceCard extends HTMLElement {
             </form>
             <p class="device-rename-error" role="alert" hidden></p>
           </div>
-          <div class="device-card-header-actions">
-            ${renderHeaderOpenWebUi(device)}
-          </div>
         </header>
         <section class="device-section connected-system">
-          <div class="connected-system-header">
-            <h3 class="connected-system-summary__heading">Target system</h3>
-            <p class="section-note-automation">
-              <a class="section-note-automation-link" href="${AUTOMATION_LICENSE_INFO_URL}" target="_blank" rel="noopener noreferrer">Requires Automation License</a>
-            </p>
-          </div>
           <div class="connected-system-body">
-            <a
-              id="connected-screenshot-link-${id}"
-              class="connected-screenshot-link"
-              href="${escapeHtml(launchHref) || '#'}"
-              target="_blank"
-              rel="noopener noreferrer"
-              tabindex="-1"
-              aria-disabled="true"
-              aria-label="Control ${escapeHtml(device.friendly_name)}"
-            >
-              <div id="preview-frame-${id}" class="preview-frame preview-frame--loading">
-                <img
-                  id="connected-screenshot-${id}"
-                  class="connected-screenshot"
-                  alt="Latest screenshot for ${escapeHtml(device.friendly_name)}"
-                  hidden
+            <div class="card-well">
+              <div class="card-stage">
+                <a
+                  id="connected-screenshot-link-${id}"
+                  class="connected-screenshot-link"
+                  href="${escapeHtml(launchHref) || '#'}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  tabindex="-1"
+                  aria-disabled="true"
+                  aria-label="Control ${escapeHtml(device.friendly_name)}"
                 >
-                <div id="preview-placeholder-${id}" class="preview-placeholder preview-placeholder--loading" aria-hidden="true">
-                  <div class="preview-spinner" aria-hidden="true"></div>
+                  <div id="preview-frame-${id}" class="preview-frame preview-frame--loading">
+                    <img
+                      id="connected-screenshot-${id}"
+                      class="connected-screenshot"
+                      alt="Latest screenshot for ${escapeHtml(device.friendly_name)}"
+                      hidden
+                    >
+                    <div id="preview-placeholder-${id}" class="preview-placeholder preview-placeholder--loading" aria-hidden="true">
+                      <div class="preview-spinner" aria-hidden="true"></div>
+                    </div>
+                  </div>
+                </a>
+              </div>
+              <div class="card-stage-info" hidden>
+                <div id="device-collapsed-summary-${id}" class="metrics-output">
+                  Retrieving device snapshot...
+                </div>
+                <div class="actions device-actions">
+                  <button type="button" data-action="fetch-device-snapshot" data-device-id="${id}">Refresh device info</button>
+                  <button type="button" data-action="replace-api-key" data-device-id="${id}">Replace API key</button>
+                  <button type="button" data-action="delete-device" data-device-id="${id}">Remove device</button>
+                </div>
+                <div id="device-details-${id}" class="device-details" hidden>
+                  <div id="device-metrics-output-${id}" class="metrics-output"></div>
                 </div>
               </div>
-            </a>
-            <div class="actions actions-connected-primary">
-              <button type="button" data-action="refresh-screenshot" data-device-id="${id}">Refresh screenshot</button>
             </div>
-            <div class="actions actions-auto-refresh-row">
-              <label class="inline-interval-label" for="screenshot-interval-${id}">Auto-refresh (min, 0 = off)</label>
-              <input
-                id="screenshot-interval-${id}"
-                class="interval-input interval-input--two-digit"
-                type="number"
-                min="0"
-                max="120"
-                step="1"
-                inputmode="numeric"
-                value="${device.screenshot_refresh_interval_minutes || 0}"
-              >
-              <button type="button" data-action="save-screenshot-interval" data-device-id="${id}">Save</button>
+            <div class="card-controls">
+              <div class="actions actions-connected-primary">
+                <button type="button" data-action="refresh-screenshot" data-device-id="${id}">Refresh screenshot</button>
+                <p id="connected-status-${id}" class="subtitle"></p>
+              </div>
+              <div class="actions actions-auto-refresh-row">
+                <label class="inline-interval-label" for="screenshot-interval-${id}">Auto-refresh</label>
+                <input
+                  id="screenshot-interval-${id}"
+                  class="interval-input interval-input--two-digit"
+                  type="number"
+                  min="0"
+                  max="120"
+                  step="1"
+                  inputmode="numeric"
+                  aria-label="Auto-refresh minutes, 0 = off"
+                  title="Minutes between screenshots. 0 turns auto-refresh off."
+                  value="${device.screenshot_refresh_interval_minutes || 0}"
+                >
+                <button type="button" data-action="save-screenshot-interval" data-device-id="${id}">Save</button>
+                <button type="button" data-action="toggle-device-info" aria-pressed="false">Show device info</button>
+              </div>
             </div>
-            <p id="connected-status-${id}" class="subtitle"></p>
-          </div>
-        </section>
-        <section class="device-section tiny-device">
-          <div class="tiny-device-header">
-            <h3 class="connected-system-summary__heading">TinyPilot device</h3>
-          </div>
-          <div class="tiny-device-body">
-            <div class="actions">
-              <button type="button" data-action="fetch-device-snapshot" data-device-id="${id}">Refresh device snapshot</button>
-              <button type="button" data-action="replace-api-key" data-device-id="${id}">Replace API key</button>
-              <button type="button" data-action="delete-device" data-device-id="${id}">Remove device</button>
-            </div>
-            <div id="device-collapsed-summary-${id}" class="metrics-output">
-              Retrieving device snapshot...
-            </div>
-            <details id="device-details-${id}" class="device-details" hidden>
-              <summary>Expanded TinyPilot device info</summary>
-              <div id="device-metrics-output-${id}" class="metrics-output"></div>
-            </details>
           </div>
         </section>
       </section>
     `;
     this._cacheElements();
     this._bindRename();
+    this._bindDeviceInfo();
     this._showLoadingPlaceholder();
     void this._primeFromCache();
+  }
+
+  _bindDeviceInfo() {
+    const card = this.querySelector('.device-card');
+    const info = this.querySelector('.card-stage-info');
+    const button = this.querySelector('[data-action="toggle-device-info"]');
+    if (!card || !info || !button) {
+      return;
+    }
+    button.addEventListener('click', () => {
+      const showInfo = card.dataset.show !== 'info';
+      card.dataset.show = showInfo ? 'info' : 'screen';
+      info.hidden = !showInfo;
+      button.textContent = showInfo ? 'Hide device info' : 'Show device info';
+      button.setAttribute('aria-pressed', showInfo ? 'true' : 'false');
+    });
   }
 
   _bindRename() {
@@ -611,9 +610,6 @@ class DeviceCard extends HTMLElement {
     const { expandedDetails, metricsOutput } = this._elements;
     if (expandedDetails) {
       expandedDetails.hidden = !visible;
-      if (!visible) {
-        expandedDetails.open = false;
-      }
     }
     if (!visible && metricsOutput) {
       metricsOutput.innerHTML = '';
