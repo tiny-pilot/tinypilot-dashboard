@@ -102,6 +102,21 @@ def _clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, value))
 
 
+def _relative_coord(value: Any) -> float | None:
+    """Parse a 0–1 coordinate; None when the model sends garbage."""
+    try:
+        return _clamp(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_arg(value: Any, default: int) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _wheel_delta(value: Any) -> int:
     """Normalize wheel delta to -1, 0, or 1."""
     try:
@@ -157,9 +172,13 @@ def run_tool(
         return {'ok': True, 'result': {}}
 
     if name == 'click':
-        rel_x = _clamp(float(arguments.get('relativeX', 0)))
-        rel_y = _clamp(float(arguments.get('relativeY', 0)))
-        button = int(arguments.get('button', 1))
+        rel_x = _relative_coord(arguments.get('relativeX'))
+        rel_y = _relative_coord(arguments.get('relativeY'))
+        if rel_x is None or rel_y is None:
+            return {'ok': False, 'error': 'invalid_arguments'}
+        button = _int_arg(arguments.get('button', 1), 1)
+        if button is None:
+            return {'ok': False, 'error': 'invalid_arguments'}
         if button not in (1, 2, 4):
             return {'ok': False, 'error': 'invalid_arguments'}
         # Move -> press -> release.
@@ -178,10 +197,17 @@ def run_tool(
         return {'ok': True, 'result': {'relativeX': rel_x, 'relativeY': rel_y}}
 
     if name == 'mouseEvent':
+        rel_x = _relative_coord(arguments.get('relativeX'))
+        rel_y = _relative_coord(arguments.get('relativeY'))
+        if rel_x is None or rel_y is None:
+            return {'ok': False, 'error': 'invalid_arguments'}
+        buttons = _int_arg(arguments.get('buttons', 0), 0)
+        if buttons is None:
+            return {'ok': False, 'error': 'invalid_arguments'}
         body = {
-            'buttons': int(arguments.get('buttons', 0)),
-            'relativeX': _clamp(float(arguments.get('relativeX', 0))),
-            'relativeY': _clamp(float(arguments.get('relativeY', 0))),
+            'buttons': buttons,
+            'relativeX': rel_x,
+            'relativeY': rel_y,
             'verticalWheelDelta': _wheel_delta(arguments.get('verticalWheelDelta', 0)),
             'horizontalWheelDelta': _wheel_delta(arguments.get('horizontalWheelDelta', 0)),
         }

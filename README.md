@@ -141,6 +141,7 @@ If none of those apply to your environment, please **do not run this alpha**.
 - Anyone who can reach `http://<host>:8080` can add, delete, and snapshot devices. Treat reachability to the dashboard as equivalent to administrative access.
 - TinyPilot devices ship with self-signed TLS certificates. The dashboard intentionally skips certificate verification when talking to them so it works out of the box; the perimeter requirement above bounds the resulting risk.
 - Device Automation API keys are encrypted on disk. Host filesystem permissions and full-disk encryption are your last line of defense — protect the host accordingly.
+- **Assistant (BYOK).** When `ASSISTANT_API_KEY` is set, anyone who can reach the dashboard can open **Assistant**, send prompts to your LLM provider (you pay token usage), and optionally enable **Allow keyboard/mouse control** to let the model send HID input to devices. Treat the dashboard URL like admin access, and restrict who can reach it (same perimeter rules as above).
 
 ## Data and backup
 

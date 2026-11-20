@@ -12,7 +12,6 @@ request handling.
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
-from typing import Optional
 
 import requests
 from flask import Blueprint
@@ -21,15 +20,15 @@ from flask import jsonify
 from flask import request
 from flask import send_file
 
-from app.auth_store import decrypt_secret
 from app.auth_store import encrypt_secret
 from app.db import get_db
+from app.device_client import device_auth_row
+from app.device_client import tinypilot_client_for_device
 from app.device_update import can_start_update
 from app.device_update import update_available
 from app.resolution import connected_resolution_from_web_ui
 from app.resolution import resolution_from_automation_state
 from app.snapshot_service import write_latest_screenshot
-from app.tinypilot_client import TinyPilotClient
 
 api_blueprint = Blueprint('api', __name__, url_prefix='/api')
 
@@ -39,36 +38,13 @@ def get_version():
     """Report the running dashboard version (useful for bug reports)."""
     return jsonify({'version': current_app.config['DASHBOARD_VERSION']})
 
-_SQL_DEVICE_AUTH = """
-    SELECT
-        devices.base_url,
-        device_auth.encrypted_automation_token
-    FROM devices
-    JOIN device_auth ON device_auth.device_id = devices.id
-    WHERE devices.id = ?
-"""
-
-
-def _device_row(device_id: int):
-    """Return device URL and encrypted API key, or None if the row is missing."""
-    return get_db().execute(_SQL_DEVICE_AUTH, (device_id,)).fetchone()
-
-
-def _api_key_from_auth_row(key_path: Path, auth_row) -> Optional[str]:
-    """Decrypt the stored Automation API key, or None if missing."""
-    if auth_row is None or auth_row['encrypted_automation_token'] is None:
-        return None
-    return decrypt_secret(key_path, auth_row['encrypted_automation_token'])
-
-
 def _client_with_api_key(device_id: int):
     """Return (TinyPilotClient, None) or (None, (jsonify_response, status))."""
-    row = _device_row(device_id)
+    row = device_auth_row(device_id)
     if row is None:
         return None, (jsonify({'error': 'device not found'}), 404)
-    key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    api_key = _api_key_from_auth_row(key_path, row)
-    if not api_key:
+    client = tinypilot_client_for_device(device_id)
+    if client is None:
         return None, (
             jsonify(
                 {
@@ -80,7 +56,7 @@ def _client_with_api_key(device_id: int):
             ),
             400,
         )
-    return TinyPilotClient(row['base_url'], api_key=api_key), None
+    return client, None
 
 
 @api_blueprint.get('/devices')
@@ -352,13 +328,8 @@ def _customer_error(err):
 def get_device_snapshot(device_id: int):
     row = get_db().execute(
         """
-        SELECT
-            devices.id,
-            devices.friendly_name,
-            devices.base_url,
-            device_auth.encrypted_automation_token
+        SELECT devices.id, devices.friendly_name, devices.base_url
         FROM devices
-        LEFT JOIN device_auth ON device_auth.device_id = devices.id
         WHERE devices.id = ?
         """,
         (device_id,),
@@ -366,9 +337,8 @@ def get_device_snapshot(device_id: int):
     if row is None:
         return jsonify({'error': 'device not found'}), 404
 
-    key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    api_key = _api_key_from_auth_row(key_path, row)
-    if not api_key:
+    client = tinypilot_client_for_device(device_id)
+    if client is None:
         return jsonify(
             {
                 'error': (
@@ -377,8 +347,6 @@ def get_device_snapshot(device_id: int):
                 )
             }
         ), 400
-
-    client = TinyPilotClient(row['base_url'], api_key=api_key)
 
     # API-key allowlist (Pro 3.2.0+): version, network, video, /state, screenshot,
     # latestRelease, update status/start. Stop after the first unreachable call.

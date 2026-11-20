@@ -331,6 +331,10 @@
           }
           return;
         }
+        var grantEl = document.getElementById('assistant-grant');
+        if (grantEl) {
+          grantEl.checked = body.grant_allowed === true;
+        }
         enableRail();
       })
       .catch(function () {

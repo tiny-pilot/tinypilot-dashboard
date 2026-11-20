@@ -104,7 +104,7 @@ def test_refresh_screenshot_endpoint(client):
     create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
-    with patch('app.api.TinyPilotClient') as client_cls:
+    with patch('app.device_client.TinyPilotClient') as client_cls:
         inst = client_cls.return_value
         inst.get_screenshot.return_value = b'jpeg-bytes'
         response = client.post(f'/api/devices/{device_id}/refresh-screenshot')
@@ -158,7 +158,7 @@ def test_device_snapshot_endpoint_returns_collapsed_and_expanded_sections(client
     create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
-    with patch('app.api.TinyPilotClient') as client_cls:
+    with patch('app.device_client.TinyPilotClient') as client_cls:
         tp_client = client_cls.return_value
         tp_client.get_status.return_value = {
             'ok': True,
@@ -220,7 +220,7 @@ def test_device_snapshot_prefers_automation_state_resolution(client):
     create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
-    with patch('app.api.TinyPilotClient') as client_cls:
+    with patch('app.device_client.TinyPilotClient') as client_cls:
         tp_client = client_cls.return_value
         tp_client.get_status.return_value = {'ok': True}
         tp_client.get_version.return_value = {'version': '3.0.2'}
@@ -290,7 +290,7 @@ def test_refresh_screenshot_surfaces_api_errors(client):
     create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
-    with patch('app.api.TinyPilotClient') as client_cls:
+    with patch('app.device_client.TinyPilotClient') as client_cls:
         client_cls.return_value.get_screenshot.side_effect = Exception(
             '403 Client Error: Forbidden'
         )
@@ -311,7 +311,7 @@ def test_refresh_screenshot_hides_connection_details(client):
     create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
-    with patch('app.api.TinyPilotClient') as client_cls:
+    with patch('app.device_client.TinyPilotClient') as client_cls:
         client_cls.return_value.get_screenshot.side_effect = (
             requests.ConnectionError(
                 'HTTPSConnectionPool(host=192.168.1.67, port=443): Max retries'
@@ -336,7 +336,7 @@ def test_device_snapshot_license_blocked_update_cannot_start(client):
     create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
-    with patch('app.api.TinyPilotClient') as client_cls:
+    with patch('app.device_client.TinyPilotClient') as client_cls:
         tp_client = client_cls.return_value
         tp_client.get_status.return_value = {'ok': True}
         tp_client.get_version.return_value = {'version': '3.0.0'}
@@ -370,7 +370,7 @@ def test_start_device_update_endpoint(client):
     create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
-    with patch('app.api.TinyPilotClient') as client_cls:
+    with patch('app.device_client.TinyPilotClient') as client_cls:
         client_cls.return_value.start_update.return_value = {}
         response = client.put(
             f'/api/devices/{device_id}/device/update',
@@ -403,7 +403,7 @@ def test_get_device_update_status_endpoint(client):
     create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
-    with patch('app.api.TinyPilotClient') as client_cls:
+    with patch('app.device_client.TinyPilotClient') as client_cls:
         client_cls.return_value.get_update_status.return_value = {
             'status': 'IN_PROGRESS',
             'updateError': None,
@@ -423,7 +423,7 @@ def test_device_snapshot_stops_when_device_unreachable(client):
     create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
-    with patch('app.api.TinyPilotClient') as client_cls:
+    with patch('app.device_client.TinyPilotClient') as client_cls:
         tp_client = client_cls.return_value
         tp_client.get_status.side_effect = requests.ConnectionError('offline')
         response = client.get(f'/api/devices/{device_id}/device/snapshot')
@@ -454,7 +454,7 @@ def test_device_snapshot_stops_when_later_call_times_out(client):
     create_response = client.post('/api/devices', json=create_payload)
     device_id = create_response.json['device']['id']
 
-    with patch('app.api.TinyPilotClient') as client_cls:
+    with patch('app.device_client.TinyPilotClient') as client_cls:
         tp_client = client_cls.return_value
         tp_client.get_status.return_value = {'ok': True}
         tp_client.get_version.side_effect = requests.Timeout('slow')

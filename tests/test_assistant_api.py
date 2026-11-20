@@ -1,6 +1,11 @@
 """HTTP tests for /api/assistant (BYOK assistant backend)."""
 
+from unittest.mock import patch
+
 import pytest
+from app.assistant.agent import clear_session_data_for_tests
+from app.assistant.agent import has_grant
+from app.assistant.agent import set_grant
 
 
 def test_assistant_config_disabled_without_api_key(client):
@@ -48,6 +53,45 @@ def test_bootstrap_404_without_device(client, assistant_enabled):
     response = client.post('/api/assistant/99/bootstrap')
     assert response.status_code == 404
     assert response.json['error'] == 'device_not_found'
+
+
+def test_bootstrap_resets_grant(client, assistant_enabled):
+    create = client.post(
+        '/api/devices',
+        json={
+            'friendly_name': 'Assistant host',
+            'base_url': 'https://192.168.1.50',
+            'api_key': 'device-api-key',
+        },
+    )
+    assert create.status_code == 201
+    device_id = create.json['device']['id']
+    session = f'device-{device_id}'
+
+    with client.application.app_context():
+        clear_session_data_for_tests()
+        set_grant(session, True)
+
+    fake_jpeg = b'\xff\xd8\xff\xd9'
+    with patch(
+        'app.device_client.TinyPilotClient.get_screenshot',
+        return_value=fake_jpeg,
+    ):
+        response = client.post(f'/api/assistant/{device_id}/bootstrap')
+
+    assert response.status_code == 200
+    body = response.json
+    assert body['ok'] is True
+    assert body['grant_allowed'] is False
+
+    with client.application.app_context():
+        assert has_grant(session) is False
+
+
+def test_still_returns_503_when_assistant_disabled(client):
+    response = client.get('/api/assistant/1/still')
+    assert response.status_code == 503
+    assert response.json['error'] == 'assistant_not_configured'
 
 
 def test_assistant_page_redirects_when_disabled(client):

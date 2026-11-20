@@ -3,16 +3,15 @@
 import json
 from datetime import datetime
 from datetime import timezone
-from pathlib import Path
 from typing import Iterator
 
 from flask import Blueprint
 from flask import Response
-from flask import current_app
 from flask import jsonify
 from flask import request
 
 from app.assistant.agent import get_still
+from app.assistant.agent import has_grant
 from app.assistant.agent import request_cancel
 from app.assistant.agent import run_agent_turn
 from app.assistant.agent import set_grant
@@ -21,9 +20,8 @@ from app.assistant.config import get_config
 from app.assistant.config import get_config_dict
 from app.assistant.config import set_config
 from app.assistant.provider import AssistantProvider
-from app.auth_store import decrypt_secret
 from app.db import get_db
-from app.tinypilot_client import TinyPilotClient
+from app.device_client import tinypilot_client_for_device
 
 assistant_blueprint = Blueprint('assistant', __name__, url_prefix='/api/assistant')
 
@@ -31,27 +29,6 @@ assistant_blueprint = Blueprint('assistant', __name__, url_prefix='/api/assistan
 def _session_key(device_id: int) -> str:
     """Session key for a device (no user auth in dashboard)."""
     return f'device-{device_id}'
-
-
-def _get_client(device_id: int) -> TinyPilotClient | None:
-    """Get a TinyPilotClient for the device, or None if not found."""
-    db = get_db()
-    row = db.execute(
-        """
-        SELECT devices.base_url, device_auth.encrypted_automation_token
-        FROM devices
-        JOIN device_auth ON device_auth.device_id = devices.id
-        WHERE devices.id = ?
-        """,
-        (device_id,),
-    ).fetchone()
-    if row is None:
-        return None
-    key_path = Path(current_app.config['SECRET_KEY_PATH'])
-    api_key = decrypt_secret(key_path, row['encrypted_automation_token'])
-    if not api_key:
-        return None
-    return TinyPilotClient(row['base_url'], api_key=api_key)
 
 
 def _record_usage(device_id: int, model: str, usage: dict) -> None:
@@ -113,14 +90,17 @@ def bootstrap(device_id: int):
     if config is None:
         return jsonify({'ok': False, 'error': 'assistant_not_configured'}), 503
 
-    client = _get_client(device_id)
+    client = tinypilot_client_for_device(device_id)
     if client is None:
         return jsonify({'ok': False, 'error': 'device_not_found'}), 404
+
+    session = _session_key(device_id)
+    set_grant(session, False)
 
     # Try to capture initial screenshot.
     try:
         screenshot = client.get_screenshot()
-        store_still(_session_key(device_id), screenshot)
+        store_still(session, screenshot)
         has_still = True
     except Exception:  # noqa: BLE001
         has_still = False
@@ -128,12 +108,15 @@ def bootstrap(device_id: int):
     return jsonify({
         'ok': True,
         'has_still': has_still,
+        'grant_allowed': has_grant(session),
     })
 
 
 @assistant_blueprint.get('/<int:device_id>/still')
 def get_device_still(device_id: int):
     """Get current screenshot for device."""
+    if get_config() is None:
+        return jsonify({'error': 'assistant_not_configured'}), 503
     data = get_still(_session_key(device_id))
     if not data:
         return Response(status=204)
@@ -163,7 +146,7 @@ def chat(device_id: int):
     if config is None:
         return jsonify({'ok': False, 'error': 'assistant_not_configured'}), 503
 
-    client = _get_client(device_id)
+    client = tinypilot_client_for_device(device_id)
     if client is None:
         return jsonify({'ok': False, 'error': 'device_not_found'}), 404
 
