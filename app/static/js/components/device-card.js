@@ -78,10 +78,24 @@ function renderHeaderOpenWebUi(device) {
   );
 }
 
+function renderHeaderAssistant(device, assistantEnabled) {
+  if (!assistantEnabled) {
+    return '';
+  }
+  const id = Number(device.id);
+  if (!Number.isFinite(id)) {
+    return '';
+  }
+  return (
+    `<a class="header-assistant" href="/assistant/${id}">Assistant</a>`
+  );
+}
+
 class DeviceCard extends HTMLElement {
   constructor() {
     super();
     this._device = null;
+    this._assistantEnabled = false;
     this._elements = {};
     this._updatePollTimer = null;
     this._desiredUpdateVersion = null;
@@ -96,6 +110,17 @@ class DeviceCard extends HTMLElement {
 
   get device() {
     return this._device;
+  }
+
+  set assistantEnabled(value) {
+    this._assistantEnabled = Boolean(value);
+    if (this.isConnected && this._device) {
+      this._render();
+    }
+  }
+
+  get assistantEnabled() {
+    return this._assistantEnabled;
   }
 
   get desiredUpdateVersion() {
@@ -137,7 +162,10 @@ class DeviceCard extends HTMLElement {
       <section class="panel device-card">
         <header class="device-card-header">
           <h3 class="device-card-title">${escapeHtml(device.friendly_name)}</h3>
-          ${renderHeaderOpenWebUi(device)}
+          <div class="device-card-header-actions">
+            ${renderHeaderAssistant(device, this._assistantEnabled)}
+            ${renderHeaderOpenWebUi(device)}
+          </div>
         </header>
         <section class="device-section connected-system">
           <div class="connected-system-header">

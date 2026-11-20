@@ -19,6 +19,7 @@ class DashboardApp extends HTMLElement {
     this._pendingUpdateCard = null;
     this._screenshotAutoRefreshTimers = new Map();
     this._screenshotCapturedAtByDevice = new Map();
+    this._assistantEnabled = false;
   }
 
   connectedCallback() {
@@ -446,6 +447,7 @@ class DashboardApp extends HTMLElement {
     for (const device of devices) {
       const card = document.createElement('device-card');
       card.dataset.deviceId = String(device.id);
+      card.assistantEnabled = this._assistantEnabled;
       card.device = device;
       container.appendChild(card);
     }
@@ -546,7 +548,11 @@ class DashboardApp extends HTMLElement {
   }
 
   async _refreshDeviceList() {
-    const payload = await window.dashboardApi.getJson('/api/devices');
+    const [configPayload, payload] = await Promise.all([
+      window.dashboardApi.getJson('/api/assistant/config'),
+      window.dashboardApi.getJson('/api/devices'),
+    ]);
+    this._assistantEnabled = Boolean(configPayload.enabled);
     if (payload.error || !Array.isArray(payload.devices)) {
       return;
     }

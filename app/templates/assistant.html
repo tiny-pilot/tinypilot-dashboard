@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" data-theme="dark" class="tp-dashboard-assistant">
+  <head>
+    {% set asset_v = '20261119-assistant-v1' %}
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Assistant — TinyPilot Dashboard</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png', v=asset_v) }}" sizes="32x32">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css', v=asset_v) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/brand-overrides.css', v=asset_v) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/assistant.css', v=asset_v) }}">
+  </head>
+  <body>
+    <div class="assistant-root">
+      <header class="assistant-topbar">
+        <a class="assistant-back" href="/">← Dashboard</a>
+        <span class="assistant-topbar-title">Assistant</span>
+        <a id="assistant-open-webui" class="assistant-open-webui" href="#" target="_blank" rel="noopener noreferrer" hidden>Open WebUI</a>
+      </header>
+      <div id="assistant-shell" data-device-id="{{ device_id }}">
+        <section class="assistant-preview-pane" aria-label="AI context still">
+          <div id="assistant-preview-still" class="assistant-preview-still"></div>
+          <p id="assistant-status" class="assistant-status" role="status">Loading…</p>
+        </section>
+        <aside class="assistant-rail" aria-label="Assistant chat">
+          <h2 class="assistant-rail-heading">Chat</h2>
+          <div id="assistant-chat-log" class="assistant-chat-log" role="log" aria-live="polite"></div>
+          <label class="assistant-grant">
+            <input type="checkbox" id="assistant-grant" name="assistant-grant">
+            Allow AI control
+          </label>
+          <form id="assistant-prompt-form" class="assistant-prompt-form">
+            <textarea id="assistant-prompt" name="message" rows="3"
+                      placeholder="Ask the Assistant…" disabled></textarea>
+            <div class="assistant-prompt-actions">
+              <button type="button" id="assistant-stop" class="assistant-stop" disabled hidden>Stop</button>
+              <button type="submit" class="assistant-send" disabled>Send</button>
+            </div>
+          </form>
+        </aside>
+      </div>
+    </div>
+    <script>
+      window.__TP_ASSISTANT__ = { deviceId: {{ device_id|tojson }} };
+    </script>
+    <script src="{{ url_for('static', filename='js/assistant.js', v=asset_v) }}"></script>
+  </body>
+</html>

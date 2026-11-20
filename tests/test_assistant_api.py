@@ -48,3 +48,16 @@ def test_bootstrap_404_without_device(client, assistant_enabled):
     response = client.post('/api/assistant/99/bootstrap')
     assert response.status_code == 404
     assert response.json['error'] == 'device_not_found'
+
+
+def test_assistant_page_redirects_when_disabled(client):
+    response = client.get('/assistant/1')
+    assert response.status_code == 302
+    assert response.location.endswith('/')
+
+
+def test_assistant_page_renders_when_enabled(client, assistant_enabled):
+    response = client.get('/assistant/1')
+    assert response.status_code == 200
+    assert b'assistant-shell' in response.data
+    assert b'assistant.js' in response.data

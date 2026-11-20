@@ -3,10 +3,12 @@
 from pathlib import Path
 
 from flask import Flask
+from flask import redirect
 from flask import render_template
 from flask import send_from_directory
 
 from app.api import api_blueprint
+from app.assistant.config import get_config
 from app.assistant.routes import assistant_blueprint
 from app.db import close_db
 from app.db import init_db
@@ -54,6 +56,12 @@ def create_app(test_config=None):
     @app.get('/')
     def index():
         return render_template('index.html')
+
+    @app.get('/assistant/<int:device_id>')
+    def assistant_page(device_id: int):
+        if get_config() is None:
+            return redirect('/')
+        return render_template('assistant.html', device_id=device_id)
 
     @app.get('/favicon.ico')
     def favicon():

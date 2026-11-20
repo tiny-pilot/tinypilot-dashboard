@@ -104,7 +104,7 @@ on your trusted network, see [Deployment & security](#deployment--security).
 
 ## AI assistant (optional, BYOK)
 
-The dashboard can call an OpenAI-compatible API to inspect and control devices when you bring your own key. There is **no assistant UI in this release yet** — configure via environment variables and use the HTTP API (Phase 1B will add a chat UI).
+The dashboard can call an OpenAI-compatible API to inspect and control devices when you bring your own key. When `ASSISTANT_API_KEY` is set, each device card shows **Assistant** — a chat UI with context stills (live KVM stays in **Open WebUI**).
 
 Set in `docker-compose.yml` (or the host environment):
 
