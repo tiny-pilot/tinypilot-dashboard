@@ -225,7 +225,8 @@ button.button-danger-quiet:hover {
   min-width: 0;
   min-height: 2rem;
   height: 2rem;
-  padding: 0 1rem;
+  /* Same 1px optical drop as the base button, in a 2rem box. */
+  padding: 0.5625rem 1rem 0.4375rem;
   line-height: 1;
 }
 
@@ -421,7 +422,7 @@ button.button-danger-quiet:hover {
 
 .preview-placeholder-detail {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 400;
   line-height: 1.35;
   color: var(--color-muted);
@@ -478,7 +479,7 @@ button.button-danger-quiet:hover {
 
 .connected-system .subtitle {
   margin: var(--space-2) 0 0;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 400;
   line-height: 1.35;
 }
@@ -538,7 +539,7 @@ button.button-danger-quiet:hover {
 
 .inline-interval-label {
   color: var(--color-muted);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   align-self: center;
 }
 
@@ -600,7 +601,8 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.45);
   border-radius: var(--radius-md);
   min-height: 1.75rem;
-  padding: 0 0.875rem;
+  /* Overpass sits high in the line. 1px more padding on top centers the label. */
+  padding: 0.4375rem 0.875rem 0.3125rem;
   margin: 0;
   cursor: pointer;
   font-family: inherit;
@@ -802,7 +804,7 @@ button:active {
 
 .pagination-summary {
   color: var(--color-muted);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
 }
 
 .theme-toggle,
@@ -814,7 +816,7 @@ button.theme-toggle {
   justify-content: center;
   height: 1.75rem;
   min-height: 1.75rem;
-  padding: 0 0.875rem;
+  padding: 0.4375rem 0.875rem 0.3125rem;
   font-family: inherit;
   font-size: 0.875rem;
   font-weight: 500;
