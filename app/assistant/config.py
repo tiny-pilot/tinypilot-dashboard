@@ -41,7 +41,12 @@ def get_config() -> Optional[AssistantConfig]:
         return None
     # Overlay SQLite settings.
     db = get_db()
-    for row in db.execute('SELECT key, value FROM assistant_config').fetchall():
+    for row in db.execute(
+            """
+            SELECT key, value FROM assistant_config
+            WHERE key IN ('instructions', 'max_steps', 'timeout')
+            """
+    ).fetchall():
         key, value = row['key'], row['value']
         if key == 'instructions':
             config.instructions = value or ''

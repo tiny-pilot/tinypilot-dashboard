@@ -11,15 +11,10 @@ from app.assistant.tools import TOOL_SPECS
 from app.assistant.tools import run_tool
 from app.tinypilot_client import TinyPilotClient
 
-_ALLOWED_HISTORY_ROLES = frozenset({'user', 'assistant', 'tool'})
-
 # In-memory chat histories keyed by session.
 _histories: dict[str, list[dict[str, Any]]] = {}
-_histories_lock = threading.Lock()
-
-# In-memory stills keyed by session.
 _stills: dict[str, bytes] = {}
-_stills_lock = threading.Lock()
+_session_lock = threading.Lock()
 
 # In-memory grants keyed by session.
 _grants: dict[str, bool] = {}
@@ -30,9 +25,8 @@ _cancels: set[str] = set()
 
 def clear_session_data_for_tests() -> None:
     """Clear all session state (for tests)."""
-    with _histories_lock:
+    with _session_lock:
         _histories.clear()
-    with _stills_lock:
         _stills.clear()
     _grants.clear()
     _cancels.clear()
@@ -61,15 +55,22 @@ def _clear_cancel(session_key: str) -> None:
     _cancels.discard(session_key)
 
 
+def _cancelled_turn_events(session_key: str) -> list[dict[str, Any]] | None:
+    if not _is_cancelled(session_key):
+        return None
+    _clear_cancel(session_key)
+    return [{'type': 'stopped'}, {'type': 'done'}]
+
+
 def get_still(session_key: str) -> bytes | None:
     """Get the current screenshot for a session."""
-    with _stills_lock:
+    with _session_lock:
         return _stills.get(session_key)
 
 
 def store_still(session_key: str, data: bytes) -> None:
     """Store a screenshot for a session."""
-    with _stills_lock:
+    with _session_lock:
         _stills[session_key] = data
 
 
@@ -92,21 +93,20 @@ def run_agent_turn(
     _clear_cancel(session_key)
 
     # Append user message to history.
-    with _histories_lock:
+    with _session_lock:
         history = _histories.setdefault(session_key, [])
         history.append({'role': 'user', 'content': user_text})
-        # Filter to allowed roles only.
-        history = [m for m in history if m.get('role') in _ALLOWED_HISTORY_ROLES]
+        history_copy = list(history)
 
     # Build messages with system prompt.
     system_prompt = build_system_prompt(custom_instructions)
     messages: list[dict[str, Any]] = [
         {'role': 'system', 'content': system_prompt},
-        *history,
+        *history_copy,
     ]
 
     # Capture fresh still at turn start.
-    with _stills_lock:
+    with _session_lock:
         still_store = _stills
     refresh = run_tool(
         'screenshot', {},
@@ -121,10 +121,8 @@ def run_agent_turn(
     attach_still = bool(refresh.get('still_updated') or get_still(session_key))
 
     for _step in range(max_steps):
-        if _is_cancelled(session_key):
-            _clear_cancel(session_key)
-            yield {'type': 'stopped'}
-            yield {'type': 'done'}
+        if cancelled := _cancelled_turn_events(session_key):
+            yield from cancelled
             return
 
         still = get_still(session_key) if attach_still else None
@@ -135,10 +133,8 @@ def run_agent_turn(
         text_chunks = []
 
         for event in provider.complete(messages, TOOL_SPECS, images):
-            if _is_cancelled(session_key):
-                _clear_cancel(session_key)
-                yield {'type': 'stopped'}
-                yield {'type': 'done'}
+            if cancelled := _cancelled_turn_events(session_key):
+                yield from cancelled
                 return
             if event.kind == 'error':
                 yield {'type': 'error', 'error': event.text or 'provider_error'}
@@ -167,15 +163,13 @@ def run_agent_turn(
                 } for tc in tool_calls],
             }
             messages.append(assistant_msg)
-            with _histories_lock:
+            with _session_lock:
                 _histories.setdefault(session_key, []).append(assistant_msg)
 
             # Execute each tool.
             for tc in tool_calls:
-                if _is_cancelled(session_key):
-                    _clear_cancel(session_key)
-                    yield {'type': 'stopped'}
-                    yield {'type': 'done'}
+                if cancelled := _cancelled_turn_events(session_key):
+                    yield from cancelled
                     return
 
                 result = run_tool(
@@ -206,7 +200,7 @@ def run_agent_turn(
                     'content': json.dumps(result),
                 }
                 messages.append(tool_msg)
-                with _histories_lock:
+                with _session_lock:
                     _histories.setdefault(session_key, []).append(tool_msg)
             continue
 
@@ -214,7 +208,7 @@ def run_agent_turn(
         if text_chunks:
             assistant_plain = {'role': 'assistant', 'content': ''.join(text_chunks)}
             messages.append(assistant_plain)
-            with _histories_lock:
+            with _session_lock:
                 _histories.setdefault(session_key, []).append(assistant_plain)
 
         yield {'type': 'done'}

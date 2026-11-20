@@ -54,7 +54,7 @@ def _get_client(device_id: int) -> TinyPilotClient | None:
     return TinyPilotClient(row['base_url'], api_key=api_key)
 
 
-def _record_usage(device_id: int, usage: dict) -> None:
+def _record_usage(device_id: int, model: str, usage: dict) -> None:
     """Record token usage to SQLite."""
     db = get_db()
     db.execute(
@@ -66,7 +66,7 @@ def _record_usage(device_id: int, usage: dict) -> None:
         (
             device_id,
             datetime.now(timezone.utc).isoformat(),
-            '',  # Model not in usage dict from provider.
+            model,
             usage.get('prompt_tokens', 0),
             usage.get('completion_tokens', 0),
             usage.get('total_tokens', 0),
@@ -94,15 +94,13 @@ def get_usage():
     """Get usage history."""
     db = get_db()
     device_id = request.args.get('device_id', type=int)
-    if device_id:
-        rows = db.execute(
-            'SELECT * FROM assistant_usage WHERE device_id = ? ORDER BY id DESC LIMIT 100',
-            (device_id,),
-        ).fetchall()
-    else:
-        rows = db.execute(
-            'SELECT * FROM assistant_usage ORDER BY id DESC LIMIT 100'
-        ).fetchall()
+    sql = 'SELECT * FROM assistant_usage'
+    params: list[int] = []
+    if device_id is not None:
+        sql += ' WHERE device_id = ?'
+        params.append(device_id)
+    sql += ' ORDER BY id DESC LIMIT 100'
+    rows = db.execute(sql, params).fetchall()
     return jsonify({
         'usage': [dict(row) for row in rows],
     })
@@ -192,7 +190,7 @@ def chat(device_id: int):
         ):
             # Record usage if present.
             if event.get('type') == 'usage' and event.get('usage'):
-                _record_usage(device_id, event['usage'])
+                _record_usage(device_id, config.model, event['usage'])
             yield json.dumps(event, separators=(',', ':')) + '\n'
 
     return Response(event_stream(), mimetype='application/x-ndjson')
