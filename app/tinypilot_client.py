@@ -112,6 +112,16 @@ class TinyPilotClient:
     def start_update(self, version: str) -> dict[str, Any]:
         return self._put_json('/api/update', {'version': version})
 
+    def post_v1(self, path: str, body: dict) -> None:
+        """POST JSON to an Automation API v1 route (Bearer auth)."""
+        response = self.session.post(
+            f'{self.base_url}{path}',
+            json=body,
+            headers=self._bearer_headers(),
+            timeout=_timeout(),
+        )
+        self._raise_for_status(response)
+
     def get_screenshot(self) -> bytes:
         response = self.session.get(
             f'{self.base_url}/api/v1/screenshot',

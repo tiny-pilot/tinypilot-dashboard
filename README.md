@@ -102,6 +102,22 @@ Compose binds to `127.0.0.1:8080` on the host by default, so the UI is
 reachable only from the machine running it. To expose it to other hosts
 on your trusted network, see [Deployment & security](#deployment--security).
 
+## AI assistant (optional, BYOK)
+
+The dashboard can call an OpenAI-compatible API to inspect and control devices when you bring your own key. There is **no assistant UI in this release yet** — configure via environment variables and use the HTTP API (Phase 1B will add a chat UI).
+
+Set in `docker-compose.yml` (or the host environment):
+
+| Variable | Required | Default |
+|----------|----------|---------|
+| `ASSISTANT_API_KEY` | Yes, to enable | — |
+| `ASSISTANT_MODEL` | No | `gpt-4o` |
+| `ASSISTANT_BASE_URL` | No | `https://api.openai.com/v1` |
+
+Runtime options (no restart): `PUT /api/assistant/config` with JSON `instructions`, `max_steps`, or `timeout`. Usage history: `GET /api/assistant/usage`.
+
+**Scheduled checks:** The assistant runs only when something calls `POST /api/assistant/<device_id>/chat` (or a future UI). It does **not** run on a timer. The dashboard **does** support periodic **screenshots** per device card (auto-refresh interval in minutes); that is separate from the AI assistant and does not send prompts to your model.
+
 ## Adding a device
 
 1. Click **Add a device**.

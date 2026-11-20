@@ -11,4 +11,8 @@ services:
       - ./data:/app/data
     environment:
       - FLASK_ENV=production
+      # Optional: enable AI assistant (BYOK). Requires TinyPilot Pro + Automation API on devices.
+      # - ASSISTANT_API_KEY=sk-...
+      # - ASSISTANT_MODEL=gpt-4o
+      # - ASSISTANT_BASE_URL=https://api.openai.com/v1
     restart: unless-stopped

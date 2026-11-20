@@ -139,7 +139,7 @@ def run_tool(
 
     if name == 'keystroke':
         try:
-            _post_device(client, '/api/v1/keystroke', arguments)
+            client.post_v1('/api/v1/keystroke', arguments)
         except requests.RequestException as exc:
             return {'ok': False, 'error': str(exc)}
         return {'ok': True, 'result': {}}
@@ -149,7 +149,7 @@ def run_tool(
         if not isinstance(text, str):
             return {'ok': False, 'error': 'invalid_arguments'}
         try:
-            _post_device(client, '/api/v1/paste', {'text': text, 'language': 'en-US'})
+            client.post_v1('/api/v1/paste', {'text': text, 'language': 'en-US'})
         except requests.RequestException as exc:
             return {'ok': False, 'error': str(exc)}
         # Settle delay: 100ms per char + 1s.
@@ -165,7 +165,7 @@ def run_tool(
         # Move -> press -> release.
         for buttons in (0, button, 0):
             try:
-                _post_device(client, '/api/v1/mouseEvent', {
+                client.post_v1('/api/v1/mouseEvent', {
                     'buttons': buttons,
                     'relativeX': rel_x,
                     'relativeY': rel_y,
@@ -186,20 +186,9 @@ def run_tool(
             'horizontalWheelDelta': _wheel_delta(arguments.get('horizontalWheelDelta', 0)),
         }
         try:
-            _post_device(client, '/api/v1/mouseEvent', body)
+            client.post_v1('/api/v1/mouseEvent', body)
         except requests.RequestException as exc:
             return {'ok': False, 'error': str(exc)}
         return {'ok': True, 'result': {}}
 
     return {'ok': False, 'error': 'unknown_tool'}
-
-
-def _post_device(client: TinyPilotClient, path: str, body: dict) -> None:
-    """POST JSON to device with Bearer auth."""
-    resp = client.session.post(
-        f'{client.base_url}{path}',
-        json=body,
-        headers=client._bearer_headers(),
-        timeout=(3, 10),
-    )
-    resp.raise_for_status()
