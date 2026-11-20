@@ -1,13 +1,16 @@
 import './components/device-card.js';
 import { formatRelativeTime } from './lib/strings.js';
+// preview-cache.js (imported via device-card) sets window.tinypilotPreviewCache.
 
 const ADD_DEVICE_TOGGLE_LABEL = 'Add a device';
 const ADD_DEVICE_MODAL_LABEL = 'Add a TinyPilot device';
 const ADD_DEVICE_SUBMIT_LABEL = 'Add device';
 const DELETE_DEVICE_MODAL_LABEL = 'Remove device';
+const REPLACE_API_KEY_MODAL_LABEL = 'Replace API key';
 const UPDATE_DEVICE_MODAL_LABEL = 'Update TinyPilot';
 const DEVICES_PER_PAGE = 4;
 const CONNECTED_STATUS_REFRESH_INTERVAL_MS = 30_000;
+const DEVICE_SNAPSHOT_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 class DashboardApp extends HTMLElement {
   constructor() {
@@ -16,10 +19,12 @@ class DashboardApp extends HTMLElement {
     this._allDevices = [];
     this._currentPage = 1;
     this._pendingDeleteDeviceId = null;
+    this._pendingReplaceApiKeyDeviceId = null;
     this._pendingUpdateCard = null;
     this._screenshotAutoRefreshTimers = new Map();
     this._screenshotCapturedAtByDevice = new Map();
     this._assistantEnabled = false;
+    this._snapshotAutoRefreshTimer = null;
   }
 
   connectedCallback() {
@@ -51,7 +56,7 @@ class DashboardApp extends HTMLElement {
           <form id="add-device-form" class="form-grid">
             <label>
               Friendly name
-              <input name="friendly_name" required autocomplete="off">
+              <input name="friendly_name" required maxlength="60" autocomplete="off">
             </label>
             <label>
               TinyPilot device URL
@@ -73,7 +78,7 @@ class DashboardApp extends HTMLElement {
             <h2 id="delete-device-heading">${DELETE_DEVICE_MODAL_LABEL}</h2>
             <button type="button" class="modal-close" id="delete-device-modal-close" aria-label="Close">&times;</button>
           </header>
-          <p class="subtitle">Type REMOVE to remove this device from your Dashboard.<br>You will need to add it again from the device.</p>
+          <p class="subtitle">Type REMOVE to remove this device from your Dashboard.</p>
           <form id="delete-device-form" class="form-grid">
             <label>
               Confirmation
@@ -85,6 +90,27 @@ class DashboardApp extends HTMLElement {
             </div>
           </form>
           <p id="delete-device-status" class="subtitle"></p>
+        </section>
+      </div>
+      <div id="replace-api-key-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="replace-api-key-heading">
+        <button type="button" class="modal-backdrop" id="replace-api-key-modal-backdrop" tabindex="-1" aria-label="Close dialog"></button>
+        <section class="modal-panel panel">
+          <header class="modal-header">
+            <h2 id="replace-api-key-heading">${REPLACE_API_KEY_MODAL_LABEL}</h2>
+            <button type="button" class="modal-close" id="replace-api-key-modal-close" aria-label="Close">&times;</button>
+          </header>
+          <p class="subtitle">Create a key on the device under System → Automation,<br>then paste it here.</p>
+          <form id="replace-api-key-form" class="form-grid">
+            <label>
+              New API key
+              <input name="api_key" type="password" required autocomplete="off" spellcheck="false">
+            </label>
+            <div class="actions replace-api-key-actions">
+              <button type="button" id="replace-api-key-cancel">Cancel</button>
+              <button type="submit">Save</button>
+            </div>
+          </form>
+          <p id="replace-api-key-status" class="subtitle"></p>
         </section>
       </div>
       <div id="update-device-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="update-device-heading">
@@ -119,6 +145,12 @@ class DashboardApp extends HTMLElement {
       deleteDeviceForm: this.shadowRoot.getElementById('delete-device-form'),
       deleteDeviceCancel: this.shadowRoot.getElementById('delete-device-cancel'),
       deleteDeviceStatus: this.shadowRoot.getElementById('delete-device-status'),
+      replaceApiKeyModal: this.shadowRoot.getElementById('replace-api-key-modal'),
+      replaceApiKeyModalClose: this.shadowRoot.getElementById('replace-api-key-modal-close'),
+      replaceApiKeyModalBackdrop: this.shadowRoot.getElementById('replace-api-key-modal-backdrop'),
+      replaceApiKeyForm: this.shadowRoot.getElementById('replace-api-key-form'),
+      replaceApiKeyCancel: this.shadowRoot.getElementById('replace-api-key-cancel'),
+      replaceApiKeyStatus: this.shadowRoot.getElementById('replace-api-key-status'),
       updateDeviceModal: this.shadowRoot.getElementById('update-device-modal'),
       updateDeviceModalClose: this.shadowRoot.getElementById('update-device-modal-close'),
       updateDeviceModalBackdrop: this.shadowRoot.getElementById('update-device-modal-backdrop'),
@@ -130,6 +162,7 @@ class DashboardApp extends HTMLElement {
     this._bind();
     void this._refreshDeviceList();
     window.setInterval(() => this._refreshConnectedStatusTimes(), CONNECTED_STATUS_REFRESH_INTERVAL_MS);
+    this._scheduleSnapshotAutoRefresh();
   }
 
   _bind() {
@@ -147,6 +180,9 @@ class DashboardApp extends HTMLElement {
     e.deleteDeviceModalClose.addEventListener('click', () => this._closeDeleteDeviceModal());
     e.deleteDeviceModalBackdrop.addEventListener('click', () => this._closeDeleteDeviceModal());
     e.deleteDeviceCancel.addEventListener('click', () => this._closeDeleteDeviceModal());
+    e.replaceApiKeyModalClose.addEventListener('click', () => this._closeReplaceApiKeyModal());
+    e.replaceApiKeyModalBackdrop.addEventListener('click', () => this._closeReplaceApiKeyModal());
+    e.replaceApiKeyCancel.addEventListener('click', () => this._closeReplaceApiKeyModal());
     e.updateDeviceModalClose.addEventListener('click', () => this._closeUpdateDeviceModal());
     e.updateDeviceModalBackdrop.addEventListener('click', () => this._closeUpdateDeviceModal());
     e.updateDeviceCancel.addEventListener('click', () => this._closeUpdateDeviceModal());
@@ -163,6 +199,11 @@ class DashboardApp extends HTMLElement {
         event.preventDefault();
         return;
       }
+      if (e.replaceApiKeyModal && !e.replaceApiKeyModal.hasAttribute('hidden')) {
+        this._closeReplaceApiKeyModal();
+        event.preventDefault();
+        return;
+      }
       if (e.deleteDeviceModal && !e.deleteDeviceModal.hasAttribute('hidden')) {
         this._closeDeleteDeviceModal();
         event.preventDefault();
@@ -176,6 +217,7 @@ class DashboardApp extends HTMLElement {
 
     this._bindAddDeviceForm();
     this._bindDeleteDeviceForm();
+    this._bindReplaceApiKeyForm();
     e.deviceSections.addEventListener('click', (event) => {
       void this._onDeviceSectionClick(event);
     });
@@ -246,6 +288,34 @@ class DashboardApp extends HTMLElement {
     this._elements.deleteDeviceForm?.reset();
     if (this._elements.deleteDeviceStatus) {
       this._elements.deleteDeviceStatus.textContent = '';
+    }
+    document.body.style.overflow = '';
+  }
+
+  _openReplaceApiKeyModal(deviceId) {
+    const e = this._elements;
+    this._pendingReplaceApiKeyDeviceId = String(deviceId);
+    e.replaceApiKeyForm?.reset();
+    if (e.replaceApiKeyStatus) {
+      e.replaceApiKeyStatus.textContent = '';
+    }
+    e.replaceApiKeyModal.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+    window.requestAnimationFrame(() => {
+      e.replaceApiKeyForm?.querySelector('input[name="api_key"]')?.focus();
+    });
+  }
+
+  _closeReplaceApiKeyModal() {
+    const { replaceApiKeyModal } = this._elements;
+    if (!replaceApiKeyModal || replaceApiKeyModal.hasAttribute('hidden')) {
+      return;
+    }
+    replaceApiKeyModal.setAttribute('hidden', '');
+    this._pendingReplaceApiKeyDeviceId = null;
+    this._elements.replaceApiKeyForm?.reset();
+    if (this._elements.replaceApiKeyStatus) {
+      this._elements.replaceApiKeyStatus.textContent = '';
     }
     document.body.style.overflow = '';
   }
@@ -349,6 +419,52 @@ class DashboardApp extends HTMLElement {
     });
   }
 
+  _bindReplaceApiKeyForm() {
+    const { replaceApiKeyForm, replaceApiKeyStatus } = this._elements;
+    if (!replaceApiKeyForm) {
+      return;
+    }
+    replaceApiKeyForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const deviceId = this._pendingReplaceApiKeyDeviceId;
+      if (!deviceId) {
+        return;
+      }
+      const apiKey = String(
+        new FormData(replaceApiKeyForm).get('api_key') || '',
+      ).trim();
+      if (!apiKey) {
+        if (replaceApiKeyStatus) {
+          replaceApiKeyStatus.textContent = 'Enter a new API key.';
+        }
+        return;
+      }
+      if (replaceApiKeyStatus) {
+        replaceApiKeyStatus.textContent = 'Saving…';
+      }
+      const result = await window.dashboardApi.putJson(
+        `/api/devices/${deviceId}/api-key`,
+        { api_key: apiKey },
+      );
+      replaceApiKeyForm.reset();
+      if (result.error) {
+        if (replaceApiKeyStatus) {
+          replaceApiKeyStatus.textContent = result.error;
+        }
+        return;
+      }
+      if (replaceApiKeyStatus) {
+        replaceApiKeyStatus.textContent = 'API key updated.';
+      }
+      const card = this._deviceCard(deviceId);
+      if (card) {
+        await card.refreshSnapshot();
+        await card.refreshScreenshot(this._screenshotCapturedAtByDevice);
+      }
+      window.setTimeout(() => this._closeReplaceApiKeyModal(), 700);
+    });
+  }
+
   _totalPages() {
     return Math.max(1, Math.ceil(this._allDevices.length / DEVICES_PER_PAGE));
   }
@@ -372,6 +488,10 @@ class DashboardApp extends HTMLElement {
     if (action === 'delete-device') {
       // In-page modal: native confirm/prompt dialogs are suppressed in some browsers.
       this._openDeleteDeviceModal(deviceId);
+      return;
+    }
+    if (action === 'replace-api-key') {
+      this._openReplaceApiKeyModal(deviceId);
       return;
     }
     const card = this._deviceCard(deviceId);
@@ -500,6 +620,27 @@ class DashboardApp extends HTMLElement {
     }
   }
 
+  _scheduleSnapshotAutoRefresh() {
+    if (this._snapshotAutoRefreshTimer) {
+      window.clearInterval(this._snapshotAutoRefreshTimer);
+    }
+    this._snapshotAutoRefreshTimer = window.setInterval(() => {
+      void this._refreshVisibleDeviceSnapshots();
+    }, DEVICE_SNAPSHOT_REFRESH_INTERVAL_MS);
+  }
+
+  async _refreshVisibleDeviceSnapshots() {
+    const visibleDevices = this._getVisibleDevices();
+    await Promise.allSettled(
+      visibleDevices.map(async (device) => {
+        const card = this._deviceCard(String(device.id));
+        if (card) {
+          await card.refreshSnapshot();
+        }
+      }),
+    );
+  }
+
   _renderCurrentPage() {
     const visibleDevices = this._getVisibleDevices();
     this._renderDeviceSections(visibleDevices);
@@ -508,17 +649,27 @@ class DashboardApp extends HTMLElement {
   }
 
   _refreshConnectedStatusTimes() {
-    for (const [deviceId, capturedAt] of this._screenshotCapturedAtByDevice.entries()) {
-      const card = this._deviceCard(deviceId);
-      const connectedStatus = card?.querySelector(`#connected-status-${deviceId}`);
+    for (const card of this._elements.deviceSections.querySelectorAll('device-card')) {
+      const deviceId = card.dataset.deviceId;
+      const connectedStatus = card.querySelector(`#connected-status-${deviceId}`);
       if (!connectedStatus) {
         continue;
       }
       const kind = connectedStatus.dataset.previewKind;
+      const checkedAt =
+        connectedStatus.dataset.checkedAt
+        || this._screenshotCapturedAtByDevice.get(String(deviceId));
+      if (!checkedAt) {
+        continue;
+      }
       if (kind === 'cached') {
-        connectedStatus.textContent = `Cached preview from ${formatRelativeTime(capturedAt)}.`;
+        connectedStatus.textContent = `Cached preview from ${formatRelativeTime(checkedAt)}.`;
       } else if (kind === 'live') {
-        connectedStatus.textContent = `Live preview, updated ${formatRelativeTime(capturedAt)}.`;
+        connectedStatus.textContent = `Live preview, updated ${formatRelativeTime(checkedAt)}.`;
+      } else if (kind === 'offline') {
+        connectedStatus.textContent = `Offline, checked ${formatRelativeTime(checkedAt)}.`;
+      } else if (kind === 'no_signal') {
+        connectedStatus.textContent = `No signal, checked ${formatRelativeTime(checkedAt)}.`;
       }
     }
     // Relative "checked … ago" is baked in at snapshot time; refresh the
@@ -557,11 +708,6 @@ class DashboardApp extends HTMLElement {
       return;
     }
     this._allDevices = payload.devices;
-    for (const device of this._allDevices) {
-      if (device.latest_screenshot_captured_at) {
-        this._screenshotCapturedAtByDevice.set(String(device.id), device.latest_screenshot_captured_at);
-      }
-    }
     const totalPages = this._totalPages();
     this._currentPage = Math.min(this._currentPage, totalPages);
     this._renderCurrentPage();

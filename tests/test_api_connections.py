@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import patch
 
 import requests
@@ -75,6 +76,91 @@ def test_create_device_rejects_blank_api_key(client):
     assert response.status_code == 400
 
 
+def test_rename_device_persists_friendly_name(client):
+    create_response = client.post('/api/devices', json={
+        'friendly_name': 'Office Rack KVM',
+        'base_url': 'https://192.168.1.44',
+        'api_key': 'test-api-key',
+    })
+    device_id = create_response.json['device']['id']
+
+    response = client.put(
+        f'/api/devices/{device_id}',
+        json={'friendly_name': '  Lab Rack  '},
+    )
+    assert response.status_code == 200
+    device = response.json['device']
+    assert device['friendly_name'] == 'Lab Rack'
+    assert device['base_url'] == 'https://192.168.1.44'
+    assert device['api_key_configured'] is True
+    assert 'screenshot_refresh_interval_minutes' in device
+
+    listed = client.get('/api/devices').json['devices']
+    assert listed[0]['friendly_name'] == 'Lab Rack'
+
+
+def test_rename_device_rejects_blank_name(client):
+    create_response = client.post('/api/devices', json={
+        'friendly_name': 'Office Rack KVM',
+        'base_url': 'https://192.168.1.44',
+        'api_key': 'test-api-key',
+    })
+    device_id = create_response.json['device']['id']
+
+    response = client.put(
+        f'/api/devices/{device_id}',
+        json={'friendly_name': '   '},
+    )
+    assert response.status_code == 400
+    assert response.json['error'] == 'friendly_name is required'
+    listed = client.get('/api/devices').json['devices']
+    assert listed[0]['friendly_name'] == 'Office Rack KVM'
+
+
+def test_friendly_name_rejects_more_than_60_characters(client):
+    long_name = 'R' * 61
+    create_response = client.post('/api/devices', json={
+        'friendly_name': long_name,
+        'base_url': 'https://192.168.1.44',
+        'api_key': 'test-api-key',
+    })
+    assert create_response.status_code == 400
+    assert create_response.json['error'] == (
+        'friendly_name must be 60 characters or fewer'
+    )
+
+    created = client.post('/api/devices', json={
+        'friendly_name': 'Office Rack KVM',
+        'base_url': 'https://192.168.1.44',
+        'api_key': 'test-api-key',
+    })
+    device_id = created.json['device']['id']
+    rename_response = client.put(
+        f'/api/devices/{device_id}',
+        json={'friendly_name': long_name},
+    )
+    assert rename_response.status_code == 400
+    assert rename_response.json['error'] == (
+        'friendly_name must be 60 characters or fewer'
+    )
+    listed = client.get('/api/devices').json['devices']
+    assert listed[0]['friendly_name'] == 'Office Rack KVM'
+
+    ok_name = 'R' * 60
+    ok_response = client.put(
+        f'/api/devices/{device_id}',
+        json={'friendly_name': ok_name},
+    )
+    assert ok_response.status_code == 200
+    assert ok_response.json['device']['friendly_name'] == ok_name
+
+
+def test_rename_device_missing_returns_404(client):
+    response = client.put('/api/devices/999', json={'friendly_name': 'Lab'})
+    assert response.status_code == 404
+    assert response.json['error'] == 'device not found'
+
+
 def test_delete_device_removes_device_and_related_rows(client):
     payload = {
         'friendly_name': 'Delete Me',
@@ -95,7 +181,7 @@ def test_delete_device_removes_device_and_related_rows(client):
     assert all(device['id'] != device_id for device in list_response.json['devices'])
 
 
-def test_refresh_screenshot_endpoint(client):
+def test_refresh_screenshot_endpoint(client, tmp_path):
     create_payload = {
         'friendly_name': 'Screenshot Device',
         'base_url': 'https://192.168.1.51',
@@ -110,14 +196,79 @@ def test_refresh_screenshot_endpoint(client):
         response = client.post(f'/api/devices/{device_id}/refresh-screenshot')
 
     assert response.status_code == 200
-    assert response.json['screenshot_refreshed'] is True
-    assert response.json['screenshot_path'].endswith(f'device-{device_id}-latest.jpg')
+    assert response.content_type.startswith('image/jpeg')
+    assert response.data == b'jpeg-bytes'
+    assert response.headers.get('X-Captured-At')
     _args, kwargs = client_cls.call_args
     assert kwargs.get('api_key') == 'test-api-key'
 
-    screenshot_response = client.get(f'/api/devices/{device_id}/latest-screenshot')
-    assert screenshot_response.status_code == 200
-    assert screenshot_response.data == b'jpeg-bytes'
+    db_parent = Path(client.application.config['DATABASE_PATH']).parent
+    shots = db_parent / 'screenshots'
+    assert not shots.exists() or list(shots.glob('*')) == []
+
+    gone = client.get(f'/api/devices/{device_id}/latest-screenshot')
+    assert gone.status_code == 404
+
+
+def test_refresh_screenshot_no_signal_code(client):
+    create_payload = {
+        'friendly_name': 'No Signal Device',
+        'base_url': 'https://192.168.1.52',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+
+    with patch('app.device_client.TinyPilotClient') as client_cls:
+        client_cls.return_value.get_screenshot.side_effect = ValueError(
+            'TinyPilot returned no screenshot image (HTTP 204 or empty body); '
+            'often means no video signal from the target.',
+        )
+        response = client.post(f'/api/devices/{device_id}/refresh-screenshot')
+
+    assert response.status_code == 502
+    assert response.json['code'] == 'no_signal'
+    assert response.json['error'] == 'No signal'
+
+
+def test_refresh_screenshot_other_value_error_is_not_no_signal(client):
+    create_payload = {
+        'friendly_name': 'Bad Value Device',
+        'base_url': 'https://192.168.1.53',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+
+    with patch('app.device_client.TinyPilotClient') as client_cls:
+        client_cls.return_value.get_screenshot.side_effect = ValueError(
+            'unexpected client failure',
+        )
+        response = client.post(f'/api/devices/{device_id}/refresh-screenshot')
+
+    assert response.status_code == 502
+    assert response.json.get('code') != 'no_signal'
+    assert 'failed to refresh screenshot' in response.json['error']
+
+
+def test_refresh_screenshot_request_exception_is_not_no_signal(client):
+    create_payload = {
+        'friendly_name': 'Bad URL Device',
+        'base_url': 'https://192.168.1.54',
+        'api_key': 'test-api-key',
+    }
+    create_response = client.post('/api/devices', json=create_payload)
+    device_id = create_response.json['device']['id']
+
+    with patch('app.device_client.TinyPilotClient') as client_cls:
+        client_cls.return_value.get_screenshot.side_effect = (
+            requests.exceptions.InvalidURL('No scheme supplied.')
+        )
+        response = client.post(f'/api/devices/{device_id}/refresh-screenshot')
+
+    assert response.status_code == 502
+    assert response.json.get('code') != 'no_signal'
+    assert 'failed to refresh screenshot' in response.json['error']
 
 
 def test_set_screenshot_refresh_interval_endpoint(client):
@@ -248,37 +399,6 @@ def test_device_snapshot_prefers_automation_state_resolution(client):
     assert snapshot_response.json['expanded']['software_update']['update_available'] is True
     assert snapshot_response.json['expanded']['software_update']['can_start'] is True
     tp_client.get_automation_state.assert_called_once_with()
-
-
-def test_latest_screenshot_rejects_paths_outside_screenshots_dir(client, tmp_path):
-    create_payload = {
-        'friendly_name': 'Path Test',
-        'base_url': 'https://192.168.1.80',
-        'api_key': 'test-api-key',
-    }
-    create_response = client.post('/api/devices', json=create_payload)
-    device_id = create_response.json['device']['id']
-
-    rogue_path = tmp_path / 'rogue.jpg'
-    rogue_path.write_bytes(b'should-not-be-served')
-
-    with client.application.app_context():
-        from app.db import get_db
-        db = get_db()
-        db.execute(
-            """
-            UPDATE device_runtime_state
-            SET latest_screenshot_path = ?
-            WHERE device_id = ?
-            """,
-            (str(rogue_path), device_id),
-        )
-        db.commit()
-
-    response = client.get(f'/api/devices/{device_id}/latest-screenshot')
-
-    assert response.status_code == 404
-    assert response.data != b'should-not-be-served'
 
 
 def test_refresh_screenshot_surfaces_api_errors(client):
