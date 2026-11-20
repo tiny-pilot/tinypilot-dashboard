@@ -39,11 +39,24 @@ def test_device_card_preview_state_labels():
     assert "kind !== 'live'" in source
 
 
-def test_dashboard_polls_visible_snapshots_every_five_minutes():
+def test_dashboard_fetches_device_info_only_on_open_or_refresh():
     app = (ROOT / 'app/static/js/dashboard-app.js').read_text(encoding='utf-8')
-    assert 'DEVICE_SNAPSHOT_REFRESH_INTERVAL_MS = 5 * 60 * 1000' in app
-    assert '_refreshVisibleDeviceSnapshots' in app
-    assert '_scheduleSnapshotAutoRefresh' in app
+    card = CARD.read_text(encoding='utf-8')
+    assert 'DEVICE_SNAPSHOT_REFRESH_INTERVAL_MS' not in app
+    assert '_scheduleSnapshotAutoRefresh' not in app
+    assert '_refreshVisibleDeviceSnapshots' not in app
+    panels = app.split('async _refreshVisibleDevicePanels()', 1)[1]
+    panels = panels.split('async _refreshDeviceList()', 1)[0]
+    assert 'refreshSnapshot' not in panels
+    assert 'refreshScreenshot' in panels
+    bind = card.split('_bindDeviceInfo()', 1)[1]
+    bind = bind.split('_bindRename()', 1)[0]
+    assert 'this.refreshSnapshot()' in bind
+    assert "showInfo ? 'info' : 'screen'" in bind
+    # The route is a template literal, not a single-quoted '/api-key'.
+    key_save = app.split('`/api/devices/${deviceId}/api-key`', 1)[1]
+    key_save = key_save.split('_closeReplaceApiKeyModal', 1)[0]
+    assert 'isDeviceInfoOpen()' in key_save
     assert 'window.tinypilotPreviewCache =' not in app
 
 

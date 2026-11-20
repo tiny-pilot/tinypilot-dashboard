@@ -10,7 +10,6 @@ const REPLACE_API_KEY_MODAL_LABEL = 'Replace API key';
 const UPDATE_DEVICE_MODAL_LABEL = 'Update TinyPilot';
 const DEVICES_PER_PAGE = 8;
 const CONNECTED_STATUS_REFRESH_INTERVAL_MS = 30_000;
-const DEVICE_SNAPSHOT_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 class DashboardApp extends HTMLElement {
   constructor() {
@@ -23,7 +22,6 @@ class DashboardApp extends HTMLElement {
     this._pendingUpdateCard = null;
     this._screenshotAutoRefreshTimers = new Map();
     this._screenshotCapturedAtByDevice = new Map();
-    this._snapshotAutoRefreshTimer = null;
   }
 
   connectedCallback() {
@@ -161,7 +159,6 @@ class DashboardApp extends HTMLElement {
     this._bind();
     void this._refreshDeviceList();
     window.setInterval(() => this._refreshConnectedStatusTimes(), CONNECTED_STATUS_REFRESH_INTERVAL_MS);
-    this._scheduleSnapshotAutoRefresh();
   }
 
   _bind() {
@@ -457,7 +454,9 @@ class DashboardApp extends HTMLElement {
       }
       const card = this._deviceCard(deviceId);
       if (card) {
-        await card.refreshSnapshot();
+        if (card.isDeviceInfoOpen()) {
+          await card.refreshSnapshot();
+        }
         await card.refreshScreenshot(this._screenshotCapturedAtByDevice);
       }
       window.setTimeout(() => this._closeReplaceApiKeyModal(), 700);
@@ -625,27 +624,6 @@ class DashboardApp extends HTMLElement {
     }
   }
 
-  _scheduleSnapshotAutoRefresh() {
-    if (this._snapshotAutoRefreshTimer) {
-      window.clearInterval(this._snapshotAutoRefreshTimer);
-    }
-    this._snapshotAutoRefreshTimer = window.setInterval(() => {
-      void this._refreshVisibleDeviceSnapshots();
-    }, DEVICE_SNAPSHOT_REFRESH_INTERVAL_MS);
-  }
-
-  async _refreshVisibleDeviceSnapshots() {
-    const visibleDevices = this._getVisibleDevices();
-    await Promise.allSettled(
-      visibleDevices.map(async (device) => {
-        const card = this._deviceCard(String(device.id));
-        if (card) {
-          await card.refreshSnapshot();
-        }
-      }),
-    );
-  }
-
   _renderCurrentPage() {
     const visibleDevices = this._getVisibleDevices();
     this._renderDeviceSections(visibleDevices);
@@ -695,10 +673,7 @@ class DashboardApp extends HTMLElement {
         if (!card) {
           return;
         }
-        await Promise.allSettled([
-          card.refreshScreenshot(this._screenshotCapturedAtByDevice),
-          card.refreshSnapshot(),
-        ]);
+        await card.refreshScreenshot(this._screenshotCapturedAtByDevice);
       }),
     );
   }
