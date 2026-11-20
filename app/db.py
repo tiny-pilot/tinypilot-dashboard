@@ -66,6 +66,23 @@ def init_db() -> None:
             last_connection_check_error TEXT,
             FOREIGN KEY(device_id) REFERENCES devices(id)
         );
+
+        -- Assistant configuration (key-value store).
+        CREATE TABLE IF NOT EXISTS assistant_config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        -- Assistant usage tracking.
+        CREATE TABLE IF NOT EXISTS assistant_usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id INTEGER NOT NULL,
+            timestamp TEXT NOT NULL,
+            model TEXT NOT NULL DEFAULT '',
+            prompt_tokens INTEGER NOT NULL DEFAULT 0,
+            completion_tokens INTEGER NOT NULL DEFAULT 0,
+            total_tokens INTEGER NOT NULL DEFAULT 0
+        );
         """
     )
     _ensure_column(

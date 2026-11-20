@@ -7,6 +7,7 @@ from flask import render_template
 from flask import send_from_directory
 
 from app.api import api_blueprint
+from app.assistant.routes import assistant_blueprint
 from app.db import close_db
 from app.db import init_db
 
@@ -34,6 +35,7 @@ def create_app(test_config=None):
         init_db()
 
     app.register_blueprint(api_blueprint)
+    app.register_blueprint(assistant_blueprint)
     app.teardown_appcontext(close_db)
 
     @app.context_processor
