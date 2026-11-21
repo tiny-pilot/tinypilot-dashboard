@@ -248,6 +248,9 @@ class DeviceCard extends HTMLElement {
       info.hidden = !showInfo;
       button.textContent = showInfo ? 'Hide device info' : 'Show device info';
       button.setAttribute('aria-pressed', showInfo ? 'true' : 'false');
+      if (showInfo) {
+        void this.refreshSnapshot();
+      }
     });
   }
 
@@ -616,6 +619,10 @@ class DeviceCard extends HTMLElement {
     }
   }
 
+  isDeviceInfoOpen() {
+    return this.querySelector('.device-card')?.dataset.show === 'info';
+  }
+
   async refreshSnapshot() {
     if (!this._device) {
       return;
@@ -708,7 +715,9 @@ class DeviceCard extends HTMLElement {
         return;
       }
       this._stopUpdatePoll();
-      await this.refreshSnapshot();
+      if (this.isDeviceInfoOpen()) {
+        await this.refreshSnapshot();
+      }
     };
     this._updatePollTimer = window.setTimeout(tick, UPDATE_POLL_INTERVAL_MS);
   }
