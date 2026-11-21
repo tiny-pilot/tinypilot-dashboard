@@ -126,6 +126,18 @@ class TinyPilotClient:
             )
         return response.content
 
+    def get_lan_monitor_events(self, limit: int = 100) -> dict[str, Any]:
+        return self._get_json(
+            f'/api/lanMonitor/events?limit={int(limit)}',
+            bearer=True,
+        )
+
+    def get_lan_monitor_devices(self) -> dict[str, Any]:
+        return self._get_json('/api/lanMonitor/devices?monitored=true', bearer=True)
+
+    def get_lan_monitor_status(self) -> dict[str, Any]:
+        return self._get_json('/api/lanMonitor/status', bearer=True)
+
     def get_automation_state(self) -> dict[str, Any]:
         """Unofficial Automation API: connected display resolution via result.source.resolution."""
         response = self.session.get(
