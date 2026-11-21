@@ -1067,3 +1067,62 @@ a.theme-toggle:visited {
 .snapshot-row__value button {
   flex-shrink: 0;
 }
+
+.lan-monitor-alerts-toggle {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  font-weight: 400;
+}
+
+.lan-monitor-alerts-toggle:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.lan-monitor-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.lan-monitor-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.device-grid:not(.device-grid--dense) .device-card[data-lan-alerts="open"] .connected-system-body {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(clamp(120px, 100vh - 280px, 380px) + 7rem);
+  min-height: 0;
+}
+
+.device-card[data-lan-alerts="open"] .card-well {
+  container-type: size;
+  flex: 1 1 auto;
+  min-height: 120px;
+  min-width: 0;
+  position: relative;
+}
+
+.device-card[data-lan-alerts="open"] .card-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(100cqw, calc(100cqh * 16 / 9));
+  height: min(100cqh, calc(100cqw * 9 / 16));
+  max-height: none;
+  aspect-ratio: auto;
+  margin: 0;
+  transform: translate(-50%, -50%);
+}
+
+.device-card[data-lan-alerts="open"] .lan-monitor-alerts {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+}

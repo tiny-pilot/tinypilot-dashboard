@@ -55,6 +55,51 @@ def test_get_screenshot_uses_bearer_and_returns_bytes(client):
     assert kwargs['timeout'] == (3, 15)
 
 
+def test_get_lan_monitor_events_sends_bearer_header(client):
+    warmup = make_response()
+    api_response = make_response({'events': []})
+    mock_session = MagicMock()
+    mock_session.get.side_effect = [warmup, api_response]
+    client.session = mock_session
+
+    result = client.get_lan_monitor_events()
+
+    assert result == {'events': []}
+    _args, kwargs = mock_session.get.call_args_list[1]
+    assert kwargs['headers']['Authorization'] == 'Bearer test-key'
+    assert _args[0].endswith('/api/lanMonitor/events?limit=100')
+
+
+def test_get_lan_monitor_devices_filters_monitored(client):
+    warmup = make_response()
+    api_response = make_response({'devices': []})
+    mock_session = MagicMock()
+    mock_session.get.side_effect = [warmup, api_response]
+    client.session = mock_session
+
+    result = client.get_lan_monitor_devices()
+
+    assert result == {'devices': []}
+    _args, kwargs = mock_session.get.call_args_list[1]
+    assert kwargs['headers']['Authorization'] == 'Bearer test-key'
+    assert _args[0].endswith('/api/lanMonitor/devices?monitored=true')
+
+
+def test_get_lan_monitor_status_sends_bearer_header(client):
+    warmup = make_response()
+    api_response = make_response({'enabled': True})
+    mock_session = MagicMock()
+    mock_session.get.side_effect = [warmup, api_response]
+    client.session = mock_session
+
+    result = client.get_lan_monitor_status()
+
+    assert result == {'enabled': True}
+    _args, kwargs = mock_session.get.call_args_list[1]
+    assert kwargs['headers']['Authorization'] == 'Bearer test-key'
+    assert _args[0].endswith('/api/lanMonitor/status')
+
+
 def test_get_latest_release_uses_bearer(client):
     warmup = make_response()
     api_response = make_response(

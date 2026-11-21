@@ -8,6 +8,24 @@ import { getPreview, putPreview } from '../lib/preview-cache.js';
 
 const UPDATE_POLL_INTERVAL_MS = 3000;
 const UPDATE_POLL_MAX_ERRORS = 10;
+const LAN_MONITOR_NOTE = {
+  off: 'LAN Monitor is off. Turn it on in the device WebUI.',
+  missing: 'This TinyPilot does not have LAN Monitor.',
+  unreachable: 'Could not reach this TinyPilot.',
+  license: 'LAN Monitor needs an Automation License on this TinyPilot.',
+  error: 'Could not read LAN Monitor status.',
+};
+
+function lanMonitorAvailability(payload) {
+  if (payload && payload.ok === true) {
+    return {
+      checkable: payload.enabled === true,
+      reason: payload.enabled === true ? '' : 'off',
+    };
+  }
+  const reason = payload && LAN_MONITOR_NOTE[payload.reason] ? payload.reason : 'error';
+  return { checkable: false, reason };
+}
 
 function formatCollapsedSnapshotSummary(c) {
   const checkedAt = c.last_checked || '';
@@ -82,6 +100,10 @@ class DeviceCard extends HTMLElement {
     this._elements = {};
     this._updatePollTimer = null;
     this._desiredUpdateVersion = null;
+    this._lanAlerts = [];
+    this._lanCheckable = false;
+    this._lanNote = '';
+    this._lanStatusSeq = 0;
     this._online = null;
     this._lastChecked = '';
     this._capturedAt = null;
@@ -196,11 +218,23 @@ class DeviceCard extends HTMLElement {
                   <button type="button" data-action="replace-api-key" data-device-id="${id}">Replace API key</button>
                   <button type="button" data-action="delete-device" data-device-id="${id}">Remove device</button>
                 </div>
+                <label class="lan-monitor-alerts-toggle">
+                  <input
+                    type="checkbox"
+                    data-action="lan-monitor-alerts"
+                    data-device-id="${id}"
+                    disabled
+                    ${device.lan_monitor_alerts ? 'checked' : ''}
+                  >
+                  LAN Monitor alerts
+                </label>
+                <p class="subtitle lan-monitor-off" hidden></p>
                 <div id="device-details-${id}" class="device-details" hidden>
                   <div id="device-metrics-output-${id}" class="metrics-output"></div>
                 </div>
               </div>
             </div>
+            <div class="lan-monitor-alerts" hidden></div>
             <div class="card-controls">
               <div class="actions actions-connected-primary">
                 <button type="button" data-action="refresh-screenshot" data-device-id="${id}">Refresh screenshot</button>
@@ -229,6 +263,7 @@ class DeviceCard extends HTMLElement {
       </section>
     `;
     this._cacheElements();
+    this._paintLanMonitor();
     this._bindRename();
     this._bindDeviceInfo();
     this._showLoadingPlaceholder();
@@ -250,8 +285,34 @@ class DeviceCard extends HTMLElement {
       button.setAttribute('aria-pressed', showInfo ? 'true' : 'false');
       if (showInfo) {
         void this.refreshSnapshot();
+        void this._loadLanMonitorStatus();
       }
     });
+  }
+
+  async _loadLanMonitorStatus() {
+    const id = this._device && this._device.id;
+    if (!id) {
+      return;
+    }
+    const seq = this._lanStatusSeq + 1;
+    this._lanStatusSeq = seq;
+    this._lanCheckable = false;
+    this._paintLanMonitor();
+    const payload = await window.dashboardApi.getJson(
+      `/api/devices/${id}/lan-monitor-status`,
+    );
+    if (seq !== this._lanStatusSeq) {
+      return;
+    }
+    const availability = lanMonitorAvailability(payload);
+    this._lanCheckable = availability.checkable;
+    this._lanNote = LAN_MONITOR_NOTE[availability.reason] || '';
+    this._paintLanMonitor();
+    this.dispatchEvent(new CustomEvent('lan-monitor-availability', {
+      bubbles: true,
+      detail: { deviceId: id, checkable: availability.checkable, reason: availability.reason },
+    }));
   }
 
   _bindRename() {
@@ -738,6 +799,51 @@ class DeviceCard extends HTMLElement {
     }
     this._setSoftwareVersionValue('Updating TinyPilot…');
     this._startUpdatePoll();
+  }
+
+  setLanMonitorState({ alerts }) {
+    this._lanAlerts = Array.isArray(alerts) ? alerts : [];
+    this._paintLanMonitor();
+  }
+
+  refreshLanMonitorTimes() {
+    for (const el of this.querySelectorAll('[data-offline-at]')) {
+      const label = el.dataset.label || '';
+      el.textContent = `${label} went offline, ${formatRelativeTime(el.dataset.offlineAt)}.`;
+    }
+  }
+
+  _paintLanMonitor() {
+    const device = this._device;
+    if (!device) {
+      return;
+    }
+    const card = this.querySelector('.device-card');
+    const box = this.querySelector('input[data-action="lan-monitor-alerts"]');
+    const off = this.querySelector('.lan-monitor-off');
+    const list = this.querySelector('.lan-monitor-alerts');
+    const alerts = this._lanAlerts;
+    box.disabled = !this._lanCheckable;
+    box.checked = Boolean(device.lan_monitor_alerts);
+    off.hidden = !this._lanNote;
+    off.textContent = this._lanNote;
+    list.hidden = alerts.length === 0;
+    list.innerHTML = alerts.map((alert) => {
+      const label = escapeHtml(alert.displayLabel);
+      const when = escapeHtml(formatRelativeTime(alert.offlineAt));
+      return (
+        `<p class="lan-monitor-alert">` +
+        `<span class="subtitle connected-status--caution" data-offline-at="${escapeHtml(alert.offlineAt)}" data-label="${label}">` +
+        `${label} went offline, ${when}.</span>` +
+        `<button type="button" data-action="dismiss-lan-monitor-alert" data-device-id="${device.id}" data-host-id="${escapeHtml(alert.deviceId)}">Dismiss</button>` +
+        `</p>`
+      );
+    }).join('');
+    if (alerts.length) {
+      card.dataset.lanAlerts = 'open';
+    } else {
+      delete card.dataset.lanAlerts;
+    }
   }
 
 }

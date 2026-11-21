@@ -93,6 +93,7 @@ def list_devices():
             devices.friendly_name,
             devices.base_url,
             device_runtime_state.screenshot_refresh_interval_minutes,
+            device_runtime_state.lan_monitor_alerts,
             CASE
                 WHEN device_auth.encrypted_automation_token IS NOT NULL THEN 1
                 ELSE 0
@@ -109,6 +110,7 @@ def list_devices():
             'friendly_name': row['friendly_name'],
             'base_url': row['base_url'],
             'screenshot_refresh_interval_minutes': row['screenshot_refresh_interval_minutes'] or 0,
+            'lan_monitor_alerts': bool(row['lan_monitor_alerts']),
             'api_key_configured': bool(row['api_key_configured']),
         }
         for row in rows
@@ -398,6 +400,107 @@ def set_screenshot_refresh_config(device_id: int):
             'screenshot_refresh_interval_minutes': interval,
         }
     )
+
+
+def _lan_monitor_event(item):
+    if not isinstance(item, dict) or 'id' not in item or 'type' not in item:
+        return None
+    try:
+        event_id = int(item['id'])
+    except (TypeError, ValueError):
+        return None
+    device_id = item.get('deviceId')
+    timestamp = item.get('timestamp')
+    return {
+        'id': event_id,
+        'type': str(item['type']),
+        'deviceId': None if device_id is None else str(device_id),
+        'timestamp': '' if timestamp is None else str(timestamp),
+    }
+
+
+def _lan_monitor_monitored(item):
+    if not isinstance(item, dict) or not item.get('id'):
+        return None
+    label = item.get('displayLabel')
+    return {
+        'id': str(item['id']),
+        'displayLabel': '' if label is None else str(label),
+    }
+
+
+@api_blueprint.put('/devices/<int:device_id>/lan-monitor-alerts')
+def set_lan_monitor_alerts(device_id: int):
+    payload = request.get_json(silent=True) or {}
+    enabled = payload.get('enabled') if isinstance(payload, dict) else None
+    if not isinstance(enabled, bool):
+        return jsonify({'error': 'enabled must be a boolean'}), 400
+
+    db = get_db()
+    existing = db.execute(
+        'SELECT id FROM devices WHERE id = ?',
+        (device_id,),
+    ).fetchone()
+    if existing is None:
+        return jsonify({'error': 'device not found'}), 404
+
+    db.execute(
+        """
+        UPDATE device_runtime_state
+        SET lan_monitor_alerts = ?
+        WHERE device_id = ?
+        """,
+        (1 if enabled else 0, device_id),
+    )
+    db.commit()
+    return jsonify({'device_id': device_id, 'lan_monitor_alerts': enabled})
+
+
+@api_blueprint.get('/devices/<int:device_id>/lan-monitor')
+def get_lan_monitor(device_id: int):
+    client, error = _client_with_api_key(device_id)
+    if error is not None:
+        return error
+    events_body, events_err = _safe_fetch(client.get_lan_monitor_events)
+    if events_err is not None or not isinstance(events_body, dict):
+        return jsonify({'ok': False})
+    devices_body, devices_err = _safe_fetch(client.get_lan_monitor_devices)
+    if devices_err is not None or not isinstance(devices_body, dict):
+        return jsonify({'ok': False})
+    events = [
+        event for item in (events_body.get('events') or [])
+        if (event := _lan_monitor_event(item))
+    ]
+    monitored = [
+        row for item in (devices_body.get('devices') or [])
+        if (row := _lan_monitor_monitored(item))
+    ]
+    return jsonify({'ok': True, 'events': events, 'monitored': monitored})
+
+
+def _lan_monitor_status_reason(err):
+    if isinstance(err, requests.HTTPError) and err.response is not None:
+        if err.response.status_code == 404:
+            return 'missing'
+        if err.response.status_code == 403:
+            return 'license'
+    if _is_unreachable(err):
+        return 'unreachable'
+    return 'error'
+
+
+@api_blueprint.get('/devices/<int:device_id>/lan-monitor-status')
+def get_lan_monitor_status(device_id: int):
+    client, error = _client_with_api_key(device_id)
+    if error is not None:
+        return error
+    body, err = _safe_fetch(client.get_lan_monitor_status)
+    if err is not None or not isinstance(body, dict):
+        return jsonify({'ok': False, 'reason': _lan_monitor_status_reason(err)})
+    enabled = body.get('enabled')
+    if not isinstance(enabled, bool):
+        return jsonify({'ok': False, 'reason': 'error'})
+    return jsonify({'ok': True, 'enabled': enabled})
 
 
 def _safe_fetch(fetcher):

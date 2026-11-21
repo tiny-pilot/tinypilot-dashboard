@@ -1,4 +1,8 @@
 import './components/device-card.js';
+import {
+  applyLanMonitorPoll,
+  dismissLanMonitorAlert,
+} from './lib/lan-monitor.js';
 import { formatRelativeTime } from './lib/strings.js';
 // preview-cache.js (imported via device-card) sets window.tinypilotPreviewCache.
 
@@ -10,6 +14,7 @@ const REPLACE_API_KEY_MODAL_LABEL = 'Replace API key';
 const UPDATE_DEVICE_MODAL_LABEL = 'Update TinyPilot';
 const DEVICES_PER_PAGE = 8;
 const CONNECTED_STATUS_REFRESH_INTERVAL_MS = 30_000;
+const LAN_MONITOR_POLL_MS = 90_000;
 
 class DashboardApp extends HTMLElement {
   constructor() {
@@ -22,6 +27,7 @@ class DashboardApp extends HTMLElement {
     this._pendingUpdateCard = null;
     this._screenshotAutoRefreshTimers = new Map();
     this._screenshotCapturedAtByDevice = new Map();
+    this._lanMonitor = new Map();
   }
 
   connectedCallback() {
@@ -216,6 +222,16 @@ class DashboardApp extends HTMLElement {
     this._bindReplaceApiKeyForm();
     e.deviceSections.addEventListener('click', (event) => {
       void this._onDeviceSectionClick(event);
+    });
+    e.deviceSections.addEventListener('change', (event) => {
+      const input = event.target.closest('input[data-action="lan-monitor-alerts"]');
+      if (!input) {
+        return;
+      }
+      void this._setLanMonitorAlerts(input.dataset.deviceId, input.checked);
+    });
+    e.deviceSections.addEventListener('lan-monitor-availability', (event) => {
+      this._onLanMonitorAvailability(event.detail || {});
     });
     this.shadowRoot.addEventListener('click', (event) => {
       void this._onPaginationClick(event);
@@ -528,6 +544,168 @@ class DashboardApp extends HTMLElement {
     }
     if (action === 'start-device-update') {
       this._openUpdateDeviceModal(card);
+      return;
+    }
+    if (action === 'dismiss-lan-monitor-alert') {
+      const entry = this._lanEntry(deviceId);
+      const next = dismissLanMonitorAlert(
+        { watermark: entry.watermark, alerts: entry.alerts },
+        button.dataset.hostId,
+      );
+      entry.alerts = next.alerts;
+      this._paintLanMonitor(deviceId);
+    }
+  }
+
+  _deviceById(deviceId) {
+    return this._allDevices.find((item) => String(item.id) === String(deviceId));
+  }
+
+  _lanEntry(deviceId) {
+    const key = String(deviceId);
+    let entry = this._lanMonitor.get(key);
+    if (!entry) {
+      entry = {
+        timer: null,
+        starting: false,
+        watermark: null,
+        alerts: [],
+        hold: false,
+      };
+      this._lanMonitor.set(key, entry);
+    }
+    return entry;
+  }
+
+  _paintLanMonitor(deviceId) {
+    const card = this._deviceCard(deviceId);
+    if (!card) {
+      return;
+    }
+    const entry = this._lanMonitor.get(String(deviceId));
+    card.setLanMonitorState({
+      alerts: entry ? entry.alerts : [],
+    });
+  }
+
+  _reapplyLanMonitor() {
+    for (const device of this._getVisibleDevices()) {
+      this._paintLanMonitor(device.id);
+    }
+  }
+
+  async _pollLanMonitor(deviceId) {
+    const device = this._deviceById(deviceId);
+    if (!device) {
+      return;
+    }
+    if (!device.lan_monitor_alerts) {
+      return;
+    }
+    const payload = await window.dashboardApi.getJson(
+      `/api/devices/${deviceId}/lan-monitor`,
+    );
+    if (!this._deviceById(deviceId)?.lan_monitor_alerts) {
+      return;
+    }
+    if (payload.error || payload.ok !== true) {
+      return;
+    }
+    const entry = this._lanEntry(deviceId);
+    const next = applyLanMonitorPoll(
+      { watermark: entry.watermark, alerts: entry.alerts },
+      payload,
+    );
+    entry.watermark = next.watermark;
+    entry.alerts = next.alerts;
+    this._paintLanMonitor(deviceId);
+  }
+
+  _onLanMonitorAvailability({ deviceId, checkable, reason }) {
+    if (!deviceId) {
+      return;
+    }
+    if (checkable && this._deviceById(deviceId)?.lan_monitor_alerts) {
+      void this._ensureLanMonitorTimer(deviceId, true);
+      return;
+    }
+    if (reason === 'unreachable') {
+      return;
+    }
+    this._pauseLanMonitor(deviceId);
+  }
+
+  async _ensureLanMonitorTimer(deviceId, force = false) {
+    const entry = this._lanEntry(deviceId);
+    if (entry.hold && !force) {
+      return;
+    }
+    entry.hold = false;
+    if (entry.timer || entry.starting) {
+      return;
+    }
+    entry.starting = true;
+    try {
+      await this._pollLanMonitor(deviceId);
+      if (entry.hold || !this._deviceById(deviceId)?.lan_monitor_alerts) {
+        return;
+      }
+      entry.timer = window.setInterval(() => {
+        void this._pollLanMonitor(deviceId);
+      }, LAN_MONITOR_POLL_MS);
+    } finally {
+      entry.starting = false;
+    }
+  }
+
+  _stopLanMonitor(deviceId) {
+    const entry = this._lanMonitor.get(String(deviceId));
+    if (!entry) {
+      return;
+    }
+    window.clearInterval(entry.timer);
+    entry.timer = null;
+    entry.hold = true;
+    entry.watermark = null;
+    entry.alerts = [];
+    this._paintLanMonitor(deviceId);
+  }
+
+  _pauseLanMonitor(deviceId) {
+    const entry = this._lanEntry(deviceId);
+    window.clearInterval(entry.timer);
+    entry.timer = null;
+    entry.hold = true;
+  }
+
+  async _startCheckedLanMonitors() {
+    for (const device of this._allDevices) {
+      if (!device.lan_monitor_alerts) {
+        continue;
+      }
+      await this._ensureLanMonitorTimer(device.id);
+    }
+  }
+
+  async _setLanMonitorAlerts(deviceId, enabled) {
+    const device = this._deviceById(deviceId);
+    const result = await window.dashboardApi.putJson(
+      `/api/devices/${deviceId}/lan-monitor-alerts`,
+      { enabled },
+    );
+    if (!device) {
+      return;
+    }
+    if (result.error || typeof result.lan_monitor_alerts !== 'boolean') {
+      device.lan_monitor_alerts = !enabled;
+      this._paintLanMonitor(deviceId);
+      return;
+    }
+    device.lan_monitor_alerts = result.lan_monitor_alerts;
+    if (device.lan_monitor_alerts) {
+      await this._ensureLanMonitorTimer(deviceId, true);
+    } else {
+      this._stopLanMonitor(deviceId);
     }
   }
 
@@ -629,11 +807,13 @@ class DashboardApp extends HTMLElement {
     this._renderDeviceSections(visibleDevices);
     this._renderPaginationControls();
     this._scheduleScreenshotAutoRefreshForDevices(visibleDevices);
+    this._reapplyLanMonitor();
   }
 
   _refreshConnectedStatusTimes() {
     for (const card of this._elements.deviceSections.querySelectorAll('device-card')) {
       const deviceId = card.dataset.deviceId;
+      card.refreshLanMonitorTimes();
       const connectedStatus = card.querySelector(`#connected-status-${deviceId}`);
       if (!connectedStatus) {
         continue;
@@ -688,6 +868,7 @@ class DashboardApp extends HTMLElement {
     this._currentPage = Math.min(this._currentPage, totalPages);
     this._renderCurrentPage();
     this._syncAddDeviceModalState();
+    void this._startCheckedLanMonitors();
     await this._refreshVisibleDevicePanels();
     this._refreshConnectedStatusTimes();
   }

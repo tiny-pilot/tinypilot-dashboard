@@ -78,6 +78,12 @@ def init_db() -> None:
         column='screenshot_refresh_interval_minutes',
         column_def='INTEGER NOT NULL DEFAULT 0',
     )
+    _ensure_column(
+        db,
+        table='device_runtime_state',
+        column='lan_monitor_alerts',
+        column_def='INTEGER NOT NULL DEFAULT 0',
+    )
     for table, column in _DROPPED_COLUMNS:
         _drop_column_if_exists(db, table, column)
     _delete_screenshot_files(
