@@ -23,6 +23,21 @@ def make_response(json_data=None, status_code=200, content=b'{}', ok=True):
     return r
 
 
+def test_probe_status_is_one_direct_get(client):
+    api_response = make_response({})
+    mock_session = MagicMock()
+    mock_session.get.return_value = api_response
+    client.session = mock_session
+
+    client.probe_status()
+
+    assert mock_session.get.call_count == 1
+    args, kwargs = mock_session.get.call_args
+    assert args[0].endswith('/api/status')
+    assert kwargs['timeout'] == (3, 10)
+    assert 'Authorization' not in kwargs.get('headers', {})
+
+
 def test_get_version_sends_bearer_header(client):
     warmup = make_response()
     api_response = make_response({'version': '3.2.0'})

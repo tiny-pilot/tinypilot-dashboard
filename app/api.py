@@ -292,6 +292,15 @@ def refresh_screenshot(device_id: int):
         return err
 
     try:
+        client.probe_status()
+    except requests.RequestException as err:
+        if _is_unreachable(err):
+            return jsonify({
+                'error': f'failed to refresh screenshot: {_customer_error(err)}',
+                'code': 'unreachable',
+            }), 502
+
+    try:
         screenshot = client.get_screenshot()
     except requests.RequestException as err:
         # requests.*Error subclasses often also inherit ValueError; handle first.
