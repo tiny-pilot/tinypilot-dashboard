@@ -28,6 +28,7 @@ def test_device_card_preview_state_labels():
     assert 'No signal' in source
     assert 'checkedStatusCopy' in source
     assert "_showCenteredLabel('Offline')" in source
+    assert "result.code === 'unreachable'" in source
     assert '_showOfflineEmpty' in source
     assert '_hasCachedImage' not in source
     assert 'preview-placeholder--loading' in source

@@ -617,6 +617,20 @@ class DeviceCard extends HTMLElement {
       `/api/devices/${id}/refresh-screenshot`,
     );
 
+    if (result.code === 'unreachable') {
+      this._online = false;
+      if (this._objectUrl) {
+        this._showImage({
+          blobUrl: this._objectUrl,
+          capturedAt: this._capturedAt || new Date().toISOString(),
+          kind: 'offline',
+        });
+      } else {
+        this._showOfflineEmpty();
+      }
+      return;
+    }
+
     if (result.code === 'no_signal') {
       const checkedAt = this._lastChecked || new Date().toISOString();
       this._showPanelPlaceholder('no_signal', 'No signal', '');

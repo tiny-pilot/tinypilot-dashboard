@@ -432,7 +432,7 @@ def test_refresh_screenshot_hides_connection_details(client):
     device_id = create_response.json['device']['id']
 
     with patch('app.api.TinyPilotClient') as client_cls:
-        client_cls.return_value.get_screenshot.side_effect = (
+        client_cls.return_value.probe_status.side_effect = (
             requests.ConnectionError(
                 'HTTPSConnectionPool(host=192.168.1.67, port=443): Max retries'
             )
@@ -440,9 +440,11 @@ def test_refresh_screenshot_hides_connection_details(client):
         response = client.post(f'/api/devices/{device_id}/refresh-screenshot')
 
     assert response.status_code == 502
+    assert response.json['code'] == 'unreachable'
     assert response.json['error'] == (
         'failed to refresh screenshot: Could not reach this TinyPilot.'
     )
+    client_cls.return_value.get_screenshot.assert_not_called()
     assert 'HTTPSConnectionPool' not in response.json['error']
     assert '192.168.1.67' not in response.json['error']
 

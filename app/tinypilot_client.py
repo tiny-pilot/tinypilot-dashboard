@@ -112,6 +112,14 @@ class TinyPilotClient:
     def start_update(self, version: str) -> dict[str, Any]:
         return self._put_json('/api/update', {'version': version})
 
+    def probe_status(self) -> None:
+        """GET /api/status. No homepage warmup. Returns when the device answers."""
+        response = self.session.get(
+            f'{self.base_url}/api/status',
+            timeout=_timeout(),
+        )
+        self._raise_for_status(response)
+
     def get_screenshot(self) -> bytes:
         response = self.session.get(
             f'{self.base_url}/api/v1/screenshot',
