@@ -118,6 +118,7 @@ def test_page_shows_eight_devices_in_a_dense_grid():
     assert 'devices.length > 4' in render
     assert 'devices.length === 5 || devices.length === 6' in render
     assert 'devices.length === 3 || devices.length === 4' in render
+    assert "container.classList.add('device-grid--dense', 'device-grid--n1')" in render
     assert "container.classList.add('device-grid--dense', 'device-grid--six')" in render
     assert "container.classList.add('device-grid--dense', 'device-grid--quad')" in render
     assert "container.classList.add('device-grid--dense')" in render
@@ -135,6 +136,9 @@ def test_page_shows_eight_devices_in_a_dense_grid():
     assert 'device-grid--quad' in css
     assert 'repeat(2, minmax(0, 1fr))' in css
     assert '100vh' in css
+    assert '52rem' not in css
+    assert '.dashboard:has(.device-grid--n1) .device-grid.device-grid--n1' in css
+    assert 'grid-template-rows: minmax(0, 1fr)' in css
 
 
 def test_device_info_replaces_the_screen_inside_the_card():

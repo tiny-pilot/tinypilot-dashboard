@@ -631,7 +631,7 @@ button:active {
 }
 
 /*
- * Up to eight per page. 1 centered, 2 paired, 3–4 two-by-two,
+ * Up to eight per page. 1 fills the window, 2 paired, 3–4 two-by-two,
  * 5–6 three across, 7–8 four across. Dense pages fill the viewport.
  */
 .device-grid {
@@ -650,13 +650,6 @@ button:active {
 
 .device-grid .device-card.panel {
   margin-bottom: 0;
-}
-
-/* Single card: keep a readable max width instead of stretching full bleed. */
-.device-grid--n1 .device-wrapper {
-  max-width: min(52rem, 100%);
-  width: 100%;
-  justify-self: center;
 }
 
 /* Below the fill breakpoint, pair a two-card page or any page with a fourth card. */
@@ -707,6 +700,11 @@ button:active {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-template-rows: repeat(2, minmax(0, 1fr));
     gap: var(--space-2);
+  }
+
+  .dashboard:has(.device-grid--n1) .device-grid.device-grid--n1 {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .dashboard:has(.device-grid--six) .device-grid.device-grid--six {

@@ -735,11 +735,11 @@ class DashboardApp extends HTMLElement {
     const container = this._elements.deviceSections;
     container.innerHTML = '';
     container.className = 'device-grid';
-    // One card stays centered. Two stays paired.
+    // One card fills the window. Two stays paired.
     // Three and four share the two-by-two grid. Five and six share two rows of three.
     // Seven and eight use two rows of four.
     if (devices.length === 1) {
-      container.classList.add('device-grid--n1');
+      container.classList.add('device-grid--dense', 'device-grid--n1');
     } else if (devices.length === 3 || devices.length === 4) {
       container.classList.add('device-grid--dense', 'device-grid--quad');
     } else if (devices.length === 5 || devices.length === 6) {
